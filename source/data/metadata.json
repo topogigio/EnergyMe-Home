@@ -1,0 +1,10 @@
+{
+    "filesystem": {
+        "version": "0.1.14",
+        "date": "2024-01-26"
+    },
+    "setup": {
+        "isFirstTime": true,
+        "timestampFirstTime": ""
+    }
+}
