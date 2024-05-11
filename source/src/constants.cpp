@@ -4,8 +4,8 @@
 // --------------------
 
 // Firmware info
-const char* FIRMWARE_VERSION = "0.4.0";
-const char* FIRMWARE_DATE = "2024-05-08";
+const char* FIRMWARE_VERSION = "0.4.4";
+const char* FIRMWARE_DATE = "2024-05-11";
 
 // File path
 const char* METADATA_JSON_PATH = "/metadata.json";
@@ -22,18 +22,17 @@ const char* FACTORY_PATH = "/fct";
 const int SERIAL_BAUDRATE = 921600; // Fastest baudrate for ESP32
 
 // Logger
-// 0:VERBOSE, 1: DEBUG, 2: INFO, 3: WARNING, 4: ERROR, 5: FATAL
+// 0: VERBOSE, 1: DEBUG, 2: INFO, 3: WARNING, 4: ERROR, 5: FATAL
 const char* LOG_TXT_PATH = "/log.txt";
-const char* LOG_COPY_TXT_PATH = "/log_copy.txt";
 const int LOG_FILE_MAX_LENGTH = 1000; // In lines
 const int DEFAULT_LOG_PRINT_LEVEL = CUSTOM_LOG_LEVEL_DEBUG;
 const int DEFAULT_LOG_SAVE_LEVEL = CUSTOM_LOG_LEVEL_INFO;
 
 // Time
 const char* NTP_SERVER = "pool.ntp.org";
-const int TIME_SYNC_INTERVAL = 3600; // 1 hour
-const int GMT_OFFSET = 3600; // 1 hour
-const int DAYLIGHT_OFFSET = 0;
+const int TIME_SYNC_INTERVAL = 3600; // Sync time every hour
+const int DEFAULT_GMT_OFFSET = 0;
+const int DEFAULT_DST_OFFSET = 0;
 
 // LED
 const int LED_RED_PIN = 38;
@@ -58,15 +57,15 @@ const int MAX_INTERVAL_PAYLOAD = 60000; // 60 seconds
 // MQTT
 const int MQTT_MAX_CONNECTION_ATTEMPT = 5; // The maximum number of attempts to connect to the MQTT broker
 const int MQTT_OVERRIDE_KEEPALIVE = 600; // The default value is 15 seconds, which is too low for the AWS IoT MQTT broker
-const int MQTT_STATUS_PUBLISH_INTERVAL = 3600; // In seconds
+const int MQTT_STATUS_PUBLISH_INTERVAL = 3600; // Time between each status publish (in seconds)
 const int MQTT_MIN_CONNECTION_INTERVAL = 60000; // In milliseconds, representing the minimum interval between two connection attempts
 
 // Conversion factors
 const float BYTE_TO_KILOBYTE = 1 / 1024.0;
 const float MILLIS_TO_HOURS = 1 / 3600000.0;
 
-// Saving data
-const int ENERGY_SAVE_INTERVAL = 3600; // Time between each energy save (in seconds) to the SPIFFS
+// Saving date
+const int ENERGY_SAVE_INTERVAL = 900; // Time between each energy save (in seconds) to the SPIFFS. Do not increase the frequency to avoid wearing the flash memory 
 
 // ESP32 status
 const int MINIMUM_FREE_HEAP_SIZE = 10000; // Below this value (in bytes), the ESP32 will restart
@@ -116,4 +115,4 @@ const int DEFAULT_PHCALB = 0x00; // Default PHCALB value
 const float POWER_FACTOR_CONVERSION_FACTOR = 1.0 / 32768.0; // PF/LSB
 
 // Sample time
-const int SAMPLE_TIME = 100; // 100 cycles = 1 second for 50Hz
+const int SAMPLE_CYCLES = 100; // 100 cycles = 1 second for 50Hz

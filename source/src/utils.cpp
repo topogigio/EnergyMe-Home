@@ -118,7 +118,9 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument jsonDocument){
 
 void restartEsp32(const char* functionName, const char* reason) {
 
-    ade7953.saveEnergyToSpiffs();
+    if (functionName != "utils::factoryReset") {
+        ade7953.saveEnergyToSpiffs();
+    }
 
     logger.log(
         (
@@ -159,7 +161,7 @@ void printMeterValues(MeterValues meterValues, const char* channelLabel) {
             String(meterValues.apparentEnergy, 3) + " VAh"
         ).c_str(),
         "main::printMeterValues",
-        CUSTOM_LOG_LEVEL_DEBUG);
+        CUSTOM_LOG_LEVEL_VERBOSE);
 }
 
 void printDeviceStatus()
@@ -210,6 +212,8 @@ void setDefaultGeneralConfiguration() {
     logger.log("Setting default general configuration...", "utils::setDefaultGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
     
     generalConfiguration.isCloudServicesEnabled = DEFAULT_IS_CLOUD_SERVICES_ENABLED;
+    generalConfiguration.gmtOffset = DEFAULT_GMT_OFFSET;
+    generalConfiguration.dstOffset = DEFAULT_DST_OFFSET;
     
     logger.log("Default general configuration set", "utils::setDefaultGeneralConfiguration", CUSTOM_LOG_LEVEL_DEBUG);
 }
@@ -253,6 +257,8 @@ JsonDocument generalConfigurationToJson(GeneralConfiguration generalConfiguratio
     JsonDocument _jsonDocument;
     
     _jsonDocument["isCloudServicesEnabled"] = generalConfiguration.isCloudServicesEnabled;
+    _jsonDocument["gmtOffset"] = generalConfiguration.gmtOffset;
+    _jsonDocument["dstOffset"] = generalConfiguration.dstOffset;
     
     return _jsonDocument;
 }
@@ -261,6 +267,201 @@ GeneralConfiguration jsonToGeneralConfiguration(JsonDocument jsonDocument) {
     GeneralConfiguration _generalConfiguration;
     
     _generalConfiguration.isCloudServicesEnabled = jsonDocument["isCloudServicesEnabled"].as<bool>();
+    _generalConfiguration.gmtOffset = jsonDocument["gmtOffset"].as<int>();
+    _generalConfiguration.dstOffset = jsonDocument["dstOffset"].as<int>();
 
     return _generalConfiguration;
+}
+
+JsonDocument getPublicLocation() {
+    HTTPClient http;
+
+    JsonDocument _jsonDocument;
+
+    http.begin(PUBLIC_LOCATION_ENDPOINT);
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+            String payload = http.getString();
+            payload.trim();
+            
+            deserializeJson(_jsonDocument, payload);
+
+            logger.log(
+                (
+                    "Location: " + 
+                    String(_jsonDocument["city"].as<String>()) + 
+                    ", " + 
+                    String(_jsonDocument["country"].as<String>()) + 
+                    " | Lat: " + 
+                    String(_jsonDocument["lat"].as<float>(), 4) + 
+                    " | Lon: " + 
+                    String(_jsonDocument["lon"].as<float>(), 4)
+                ).c_str(),
+                "utils::getPublicLocation",
+                CUSTOM_LOG_LEVEL_DEBUG
+            );
+        }
+    } else {
+        logger.log(
+            ("Error on HTTP request: " + String(httpCode)).c_str(), 
+            "utils::getPublicLocation", 
+            CUSTOM_LOG_LEVEL_ERROR
+        );
+        deserializeJson(_jsonDocument, "{}");
+    }
+
+    http.end();
+
+    return _jsonDocument;
+}
+
+std::pair<int, int> getPublicTimezone() {
+    int _gmtOffset;
+    int _dstOffset;
+
+    JsonDocument _jsonDocument = getPublicLocation();
+
+    HTTPClient http;
+    String _url = PUBLIC_TIMEZONE_ENDPOINT;
+    _url += "lat=" + String(_jsonDocument["lat"].as<float>(), 4);
+    _url += "&lng=" + String(_jsonDocument["lon"].as<float>(), 4);
+    _url += "&username=" + String(PUBLIC_TIMEZONE_USERNAME);
+
+    http.begin(_url);
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+        if (httpCode == HTTP_CODE_OK) {
+            String payload = http.getString();
+            payload.trim();
+            
+            deserializeJson(_jsonDocument, payload);
+
+            logger.log(
+                (
+                    "GMT offset: " + 
+                    String(_jsonDocument["rawOffset"].as<int>()) + 
+                    " | DST offset: " + 
+                    String(_jsonDocument["dstOffset"].as<int>())
+                ).c_str(),
+                "utils::getPublicTimezone",
+                CUSTOM_LOG_LEVEL_DEBUG
+            );
+
+            _gmtOffset = _jsonDocument["rawOffset"].as<int>() * 3600; // Convert hours to seconds
+            _dstOffset = _jsonDocument["dstOffset"].as<int>() * 3600 - _gmtOffset; // Convert hours to seconds. Remove GMT offset as it is already included in the dst offset
+        }
+    } else {
+        logger.log(
+            ("Error on HTTP request: " + String(httpCode)).c_str(), 
+            "utils::getPublicTimezone", 
+            CUSTOM_LOG_LEVEL_ERROR
+        );
+        deserializeJson(_jsonDocument, "{}");
+
+        _gmtOffset = generalConfiguration.gmtOffset;
+        _dstOffset = generalConfiguration.dstOffset;
+    }
+
+    return std::make_pair(_gmtOffset, _dstOffset);
+}
+
+void updateTimezone() {
+    logger.log("Updating timezone", "utils::updateTimezone", CUSTOM_LOG_LEVEL_DEBUG);
+
+    std::pair<int, int> _timezones = getPublicTimezone();
+
+    generalConfiguration.gmtOffset = _timezones.first;
+    generalConfiguration.dstOffset = _timezones.second;
+    
+    saveGeneralConfigurationToSpiffs();
+}
+
+void factoryReset() {
+    logger.log("Factory reset requested", "utils::factoryReset", CUSTOM_LOG_LEVEL_FATAL);
+
+    File _file;
+
+    std::vector<String> _files = {
+        METADATA_JSON_PATH,
+        GENERAL_CONFIGURATION_JSON_PATH,
+        CONFIGURATION_ADE7953_JSON_PATH,
+        CALIBRATION_JSON_PATH,
+        CHANNEL_DATA_JSON_PATH,
+        LOGGER_JSON_PATH,
+        ENERGY_JSON_PATH,
+        DAILY_ENERGY_JSON_PATH,
+        LOG_TXT_PATH
+    };
+
+    for (String _fileName : _files) {
+        _file = SPIFFS.open(_fileName, "r");
+        if (!_file) {
+            logger.log(
+                (
+                    "Failed to open file " + 
+                    String(_file)
+                ).c_str(),
+                "utils::factoryReset",
+                CUSTOM_LOG_LEVEL_ERROR
+            );
+            return;
+        }
+
+        SPIFFS.rename(_fileName, ("/old" + String(_fileName)).c_str());
+        if (!_duplicateFile((String(FACTORY_PATH) + String(_fileName)).c_str(), _fileName.c_str())) {
+            logger.log(
+                (
+                    "Failed to duplicate file " + 
+                    String(_fileName)
+                ).c_str(),
+                "utils::factoryReset",
+                CUSTOM_LOG_LEVEL_ERROR
+            );
+            return;
+        }
+    }
+
+    logger.log("Factory reset completed. We are back to the good old days. Now rebooting...", "utils::factoryReset", CUSTOM_LOG_LEVEL_FATAL);
+    restartEsp32("utils::factoryReset", "Factory reset");
+}
+
+bool _duplicateFile(const char* sourcePath, const char* destinationPath) {
+    logger.log("Duplicating file", "utils::_duplicateFile", CUSTOM_LOG_LEVEL_DEBUG);
+
+    File _sourceFile = SPIFFS.open(sourcePath, "r");
+    if (!_sourceFile) {
+        logger.log(
+            (
+                "Failed to open source file: " + 
+                String(sourcePath)
+            ).c_str(),
+            "utils::_duplicateFile",
+            CUSTOM_LOG_LEVEL_ERROR
+        );
+        return false;
+    }
+
+    File _destinationFile = SPIFFS.open(destinationPath, "w");
+    if (!_destinationFile) {
+        logger.log(
+            (
+                "Failed to open destination file: " + 
+                String(destinationPath)
+            ).c_str(),
+            "utils::_duplicateFile",
+            CUSTOM_LOG_LEVEL_ERROR
+        );
+        return false;
+    }
+
+    while (_sourceFile.available()) {
+        _destinationFile.write(_sourceFile.read());
+    }
+
+    _sourceFile.close();
+    _destinationFile.close();
+
+    logger.log("File duplicated", "utils::_duplicateFile", CUSTOM_LOG_LEVEL_DEBUG);
+    return true;
 }
