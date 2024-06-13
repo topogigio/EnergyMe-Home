@@ -532,7 +532,7 @@ const char calibration_html[] PROGMEM = R"rawliteral(
                     if (this.readyState == 4 && this.status == 200) {
                         console.log(JSON.parse(this.responseText));
                     } else if (this.readyState == 4) {
-                        console.log("Error submitting calibration data);
+                        console.log("Error submitting calibration data");
                     }
                 };
                 xhttp.open("POST", '/rest/set-calibration', true);
@@ -1069,14 +1069,18 @@ const char index_html[] PROGMEM = R"rawliteral(
     
         channels.forEach(function (channel, i) {
             var data = labels.map(function (label) {
-                if (consumptionData[label][channel] >= 1000) {
-                    return consumptionData[label][channel].toFixed(0);
-                } else if (consumptionData[label][channel] >= 100) {
-                    return consumptionData[label][channel].toFixed(1);
-                } else if (consumptionData[label][channel] >= 10) {
-                    return consumptionData[label][channel].toFixed(2);
+                var value = consumptionData[label][channel];
+                if (isNaN(value)) {
+                    value = 0;
+                }
+                if (value >= 1000) {
+                    return value.toFixed(0);
+                } else if (value >= 100) {
+                    return value.toFixed(1);
+                } else if (value >= 10) {
+                    return value.toFixed(2);
                 } else {
-                    return consumptionData[label][channel].toFixed(3);
+                    return value.toFixed(3);
                 }
             });
     
@@ -1115,8 +1119,8 @@ const char index_html[] PROGMEM = R"rawliteral(
 
     function plotPieChart(consumptionData) {
         var labels = Object.keys(consumptionData);
-        var data = Object.values(consumptionData);
-    
+        var data = Object.values(consumptionData).map(value => isNaN(value) ? 0 : value); // Replace NaN with 0
+
         var totalConsumption = data.reduce(function (acc, value) {
             return acc + value;
         }, 0);
@@ -1174,15 +1178,21 @@ const char index_html[] PROGMEM = R"rawliteral(
                 if (Object.keys(dailyEnergy).length !== 0) {
                     dailyActiveEnergy = parseDailyEnergy();
                     plotConsumptionChart(dailyActiveEnergy);
+                    
+                    totalActiveEnergy = getTotalActiveEnergy();
+                    plotPieChart(totalActiveEnergy);
                 } else {
                     document.getElementById("consumption-chart").innerHTML = "No data available yet. Come back in a few hours!";
                     document.getElementById("consumption-chart").style.textAlign = "center";
                     document.getElementById("consumption-chart").style.fontSize = "20px";
                     document.getElementById("consumption-chart").style.color = "#808080"; // Gray color
+
+                    document.getElementById("pie-chart").innerHTML = "No data available yet. Come back in a few hours!";
+                    document.getElementById("pie-chart").style.textAlign = "center";
+                    document.getElementById("pie-chart").style.fontSize = "20px";
+                    document.getElementById("pie-chart").style.color = "#808080"; // Gray color
                 }
 
-                totalActiveEnergy = getTotalActiveEnergy();
-                plotPieChart(totalActiveEnergy);
             })
             .catch(error => console.error('Error:', error));
     }
@@ -1235,11 +1245,11 @@ const char info_html[] PROGMEM = R"rawliteral(
             <p><span class='list-key'>Date:</span><span id='filesystemDate' class='list-value'></span></p>
             <h3>Memory</h3>
             <h4>Heap</h4>
-            <p><span class='list-key'>Free:</span><span id='heapFree' class='list-value'></span> kB</p>
-            <p><span class='list-key'>Total:</span><span id='heapTotal' class='list-value'></span> kB</p>
+            <p><span class='list-key'>Free:</span><span id='heapFree' class='list-value'></span></p>
+            <p><span class='list-key'>Total:</span><span id='heapTotal' class='list-value'></span></p>
             <h4>Spiffs</h4>
-            <p><span class='list-key'>Free:</span><span id='spiffsFree' class='list-value'></span> kB</p>
-            <p><span class='list-key'>Total:</span><span id='spiffsTotal' class='list-value'></span> kB</p>
+            <p><span class='list-key'>Free:</span><span id='spiffsFree' class='list-value'></span></p>
+            <p><span class='list-key'>Total:</span><span id='spiffsTotal' class='list-value'></span></p>
             <h3>Chip</h3>
             <p><span class='list-key'>Model:</span><span id='chipModel' class='list-value'></span></p>
             <p><span class='list-key'>Revision:</span><span id='chipRevision' class='list-value'></span></p>
