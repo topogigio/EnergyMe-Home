@@ -1017,7 +1017,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         var totalActiveEnergy = {};
 
         for (var channel in meterData) {
-            totalActiveEnergy[channel] = meterData[channel].data.activeEnergy / 1000;
+            totalActiveEnergy[meterData[channel].index] = meterData[channel].data.activeEnergy / 1000;
         }
 
         totalActiveEnergy = addTotalOtherEnergy(totalActiveEnergy);
