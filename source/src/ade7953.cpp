@@ -589,45 +589,50 @@ void Ade7953::_initializeMeterValues() {
     }
 }
 
-void Ade7953::readMeterValues(int channel) { // TODO: add saturate/validate values function
+void Ade7953::readMeterValues(int channel) {
     long _currentMillis = millis();
+    long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
+    meterValues[channel].lastMillis = _currentMillis;
+
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
 
-    meterValues[channel].voltage = readVoltageRms() * channelData[channel].calibrationValues.vLsb;
-    meterValues[channel].current = readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb;
-    meterValues[channel].activePower = readActivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.wLsb * (channelData[channel].reverse ? -1 : 1);
-    meterValues[channel].reactivePower = readReactivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.varLsb * (channelData[channel].reverse ? -1 : 1);
-    meterValues[channel].apparentPower = readApparentPowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.vaLsb;
-    meterValues[channel].powerFactor = readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
+    float _voltage = readVoltageRms() * channelData[channel].calibrationValues.vLsb;
+    float _current = readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb;
+    float _activePower = readActivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.wLsb * (channelData[channel].reverse ? -1 : 1);
+    float _reactivePower = readReactivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.varLsb * (channelData[channel].reverse ? -1 : 1);
+    float _apparentPower = readApparentPowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.vaLsb;
+    float _powerFactor = readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
 
+    meterValues[channel].voltage = _validateVoltage(meterValues[channel].voltage, _voltage);
+    meterValues[channel].current = _validateCurrent(meterValues[channel].current, _current);
+    meterValues[channel].activePower = _validatePower(meterValues[channel].activePower, _activePower);
+    meterValues[channel].reactivePower = _validatePower(meterValues[channel].reactivePower, _reactivePower);
+    meterValues[channel].apparentPower = _validatePower(meterValues[channel].apparentPower, _apparentPower);
+    meterValues[channel].powerFactor = _validatePowerFactor(meterValues[channel].powerFactor, _powerFactor);
+    
     float _activeEnergy = readActiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.whLsb;
     float _reactiveEnergy = readReactiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.varhLsb;
     float _apparentEnergy = readApparentEnergy(_ade7953Channel) * channelData[channel].calibrationValues.vahLsb;
 
     if (_activeEnergy != 0.0) {
-        long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
-        meterValues[channel].activeEnergy += meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0;
+        meterValues[channel].activeEnergy += meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0; // W * ms * s / 1000 ms * h / 3600 s = Wh
     } else {
         meterValues[channel].activePower = 0.0;
         meterValues[channel].powerFactor = 0.0;
     }
 
     if (_reactiveEnergy != 0.0) {
-        long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
-        meterValues[channel].reactiveEnergy += meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0;
+        meterValues[channel].reactiveEnergy += meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0; // var * ms * s / 1000 ms * h / 3600 s = VArh
     } else {
         meterValues[channel].reactivePower = 0.0;
     }
 
     if (_apparentEnergy != 0.0) {
-        long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
-        meterValues[channel].apparentEnergy += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0;
+        meterValues[channel].apparentEnergy += meterValues[channel].apparentPower * _deltaMillis / 1000.0 / 3600.0; // VA * ms * s / 1000 ms * h / 3600 s = VAh
     } else {
         meterValues[channel].current = 0.0;
         meterValues[channel].apparentPower = 0.0;
     }
-
-    meterValues[channel].lastMillis = _currentMillis;
 }
 
 float Ade7953::_validateValue(float oldValue, float newValue, float min, float max) {

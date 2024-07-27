@@ -92,20 +92,14 @@ bool serializeJsonToSpiffs(const char* path, JsonDocument _jsonDocument){
 
 void restartEsp32(const char* functionName, const char* reason) {
 
+    led.block();
+    led.setBrightness(LED_MAX_BRIGHTNESS);
+    led.setRed(true);
+    
     if (functionName != "utils::factoryReset") {
         ade7953.saveEnergyToSpiffs();
     }
     logger.fatal("Restarting ESP32 from function %s. Reason: %s", "main::restartEsp32", functionName, reason);
-
-    led.setBrightness(LED_MAX_BRIGHTNESS);
-    led.block();
-    for (int i = 0; i < 3; i++){
-        led.setYellow(true);
-        delay(200);
-        led.setCyan(true);
-        delay(200);
-    }
-    led.unblock();
 
     ESP.restart();
 }
