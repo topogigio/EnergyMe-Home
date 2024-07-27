@@ -4,8 +4,8 @@
 // --------------------
 
 // Firmware info
-const char* FIRMWARE_VERSION = "0.4.8";
-const char* FIRMWARE_DATE = "2024-07-02";
+const char* FIRMWARE_VERSION = "0.4.9";
+const char* FIRMWARE_DATE = "2024-07-27";
 
 // File path
 const char* METADATA_JSON_PATH = "/metadata.json";
@@ -118,3 +118,13 @@ const float POWER_FACTOR_CONVERSION_FACTOR = 1.0 / 32768.0; // PF/LSB
 
 // Sample time
 const int SAMPLE_CYCLES = 100; // 100 cycles = 1 second for 50Hz
+
+// Validate values
+const float VALIDATE_VOLTAGE_MIN = 150.0;
+const float VALIDATE_VOLTAGE_MAX = 300.0;
+const float VALIDATE_CURRENT_MIN = -100.0;
+const float VALIDATE_CURRENT_MAX = 100.0;
+const float VALIDATE_POWER_MIN = -100000.0;
+const float VALIDATE_POWER_MAX = 100000.0;
+const float VALIDATE_POWER_FACTOR_MIN = -1.0;
+const float VALIDATE_POWER_FACTOR_MAX = 1.0;

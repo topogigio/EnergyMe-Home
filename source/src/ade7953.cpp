@@ -589,16 +589,16 @@ void Ade7953::_initializeMeterValues() {
     }
 }
 
-void Ade7953::readMeterValues(int channel) {
+void Ade7953::readMeterValues(int channel) { // TODO: add saturate/validate values function
     long _currentMillis = millis();
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
 
     meterValues[channel].voltage = readVoltageRms() * channelData[channel].calibrationValues.vLsb;
-    meterValues[channel].current = readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb * (channelData[channel].reverse ? -1 : 1);
+    meterValues[channel].current = readCurrentRms(_ade7953Channel) * channelData[channel].calibrationValues.aLsb;
     meterValues[channel].activePower = readActivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.wLsb * (channelData[channel].reverse ? -1 : 1);
     meterValues[channel].reactivePower = readReactivePowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.varLsb * (channelData[channel].reverse ? -1 : 1);
     meterValues[channel].apparentPower = readApparentPowerInstantaneous(_ade7953Channel) * channelData[channel].calibrationValues.vaLsb;
-    meterValues[channel].powerFactor = readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR;
+    meterValues[channel].powerFactor = readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
 
     float _activeEnergy = readActiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.whLsb;
     float _reactiveEnergy = readReactiveEnergy(_ade7953Channel) * channelData[channel].calibrationValues.varhLsb;
@@ -628,6 +628,30 @@ void Ade7953::readMeterValues(int channel) {
     }
 
     meterValues[channel].lastMillis = _currentMillis;
+}
+
+float Ade7953::_validateValue(float oldValue, float newValue, float min, float max) {
+    if (newValue < min || newValue > max) {
+        logger.warning("Value %f out of range (minimum: %f, maximum: %f). Keeping old value %f", "ade7953::_validateValue", newValue, min, max, oldValue);
+        return oldValue;
+    }
+    return newValue;
+}
+
+float Ade7953::_validateVoltage(float oldValue, float newValue) {
+    return _validateValue(oldValue, newValue, VALIDATE_VOLTAGE_MIN, VALIDATE_VOLTAGE_MAX);
+}
+
+float Ade7953::_validateCurrent(float oldValue, float newValue) {
+    return _validateValue(oldValue, newValue, VALIDATE_CURRENT_MIN, VALIDATE_CURRENT_MAX);
+}
+
+float Ade7953::_validatePower(float oldValue, float newValue) {
+    return _validateValue(oldValue, newValue, VALIDATE_POWER_MIN, VALIDATE_POWER_MAX);
+}
+
+float Ade7953::_validatePowerFactor(float oldValue, float newValue) {
+    return _validateValue(oldValue, newValue, VALIDATE_POWER_FACTOR_MIN, VALIDATE_POWER_FACTOR_MAX);
 }
 
 JsonDocument Ade7953::singleMeterValuesToJson(int index) {

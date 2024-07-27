@@ -155,4 +155,14 @@ extern const float POWER_FACTOR_CONVERSION_FACTOR; // PF/LSB
 // Sample time
 extern const int SAMPLE_CYCLES;
 
+// Validate values
+extern const float VALIDATE_VOLTAGE_MIN;
+extern const float VALIDATE_VOLTAGE_MAX;
+extern const float VALIDATE_CURRENT_MIN;
+extern const float VALIDATE_CURRENT_MAX;
+extern const float VALIDATE_POWER_MIN;
+extern const float VALIDATE_POWER_MAX;
+extern const float VALIDATE_POWER_FACTOR_MIN;
+extern const float VALIDATE_POWER_FACTOR_MAX;
+
 #endif

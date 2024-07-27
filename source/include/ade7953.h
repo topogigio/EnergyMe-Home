@@ -110,6 +110,12 @@ private:
     
     void _setChannelDataFromSpiffs();
 
+    float _validateValue(float oldValue, float newValue, float min, float max);
+    float _validateVoltage(float oldValue, float newValue);
+    float _validateCurrent(float oldValue, float newValue);
+    float _validatePower(float oldValue, float newValue);
+    float _validatePowerFactor(float oldValue, float newValue);
+
     int _ssPin;
     int _sckPin;
     int _misoPin;
