@@ -80,6 +80,10 @@
                 .map(key => `<option value="${key}" ${key === channel.calibrationLabel ? 'selected' : ''}>${key}</option>`)
                 .join('');
 
+            const phaseOptions = [1, 2, 3]
+                .map(phase => `<option value="${phase}" ${phase === channel.phase ? 'selected' : ''}>${phase}</option>`)
+                .join('');
+
             box.innerHTML = `
                 <label>
                     Label:
@@ -90,6 +94,13 @@
                     Calibration:
                     <select id="calibration${index}" onchange="updateChannel(${index})">
                         ${calibrationOptions}
+                    </select>
+                </label>
+                <div style="height: 10px;"></div>
+                <label>
+                    Phase:
+                    <select id="phase${index}" onchange="updateChannel(${index})">
+                        ${phaseOptions}
                     </select>
                 </label>
                 <div style="height: 10px;"></div>
@@ -153,6 +164,7 @@
                 label: document.getElementById(`label${index}`).value,
                 calibrationLabel: document.getElementById(`calibration${index}`).value,
                 reverse: document.getElementById(`reverse${index}`).checked,
+                phase: document.getElementById(`phase${index}`).value,
                 active: document.getElementById(`active${index}`).checked
             };
             
@@ -167,6 +179,7 @@
             label: document.getElementById(`label${index}`).value,
             calibrationLabel: document.getElementById(`calibration${index}`).value,
             reverse: document.getElementById(`reverse${index}`).checked,
+            phase: parseInt(document.getElementById(`phase${index}`).value),
             active: document.getElementById(`active${index}`).checked
         };
 

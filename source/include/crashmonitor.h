@@ -1,37 +1,57 @@
-#ifndef CRASHMONITOR_H
-#define CRASHMONITOR_H
+#pragma once
 
 #include <esp_attr.h>
 #include <esp_system.h>
-#include <esp_ota_ops.h>
-#include <rom/rtc.h>
 #include <esp_task_wdt.h>
-#include <esp_debug_helpers.h>
 #include <AdvancedLogger.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
+#include <Update.h>
+#include <Preferences.h>
 
 #include "constants.h"
 #include "structs.h"
+#include "utils.h"
+
+extern CrashData crashData;
 
 class CrashMonitor {
 public:
-    CrashMonitor(AdvancedLogger& logger, CrashData& crashData);
+    CrashMonitor(AdvancedLogger& logger);
 
     void begin();
-    void leaveBreadcrumb(CustomModule module, uint8_t id);
-    void logCrashInfo();
-    void getJsonReport(JsonDocument& _jsonDocument);
-    void saveJsonReport();
+    void leaveBreadcrumb(const char* filename, const char* functionName, unsigned int lineNumber, unsigned int coreId);
+
+    void crashCounterLoop();
+    void firmwareTestingLoop();
+
+    static bool setFirmwareStatus(FirmwareState status);
+    static FirmwareState getFirmwareStatus();
+
+    static bool getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport);
+    static bool getSavedCrashData(CrashData& crashDataSaved);
+
+    static bool isLastResetDueToCrash();
+
+    static String getFirmwareStatusString(FirmwareState status);
     
 private:
-    const size_t MAX_BACKTRACE = 32;
-
-    const char* _getModuleName(CustomModule module);
-    const char* _getResetReasonString(esp_reset_reason_t reason);
+    static const char* _getResetReasonString(esp_reset_reason_t reason);
     
-    CrashData& _crashData;
+    void _logCrashInfo();
+    void _saveCrashData();
+    
+    void _handleCrashCounter();
+    void _handleFirmwareTesting();
+    
+    void _initializeCrashData();
+    static bool _isValidBreadcrumb(const Breadcrumb& crumb);
+    
+    bool _isFirmwareUpdate = false;
+    bool _isCrashCounterReset = false;
+
     AdvancedLogger& _logger;
 };
 
-#endif
+extern CrashMonitor crashMonitor;
+#define TRACE crashMonitor.leaveBreadcrumb(pathToFileName(__FILE__), __FUNCTION__, __LINE__, xPortGetCoreID());

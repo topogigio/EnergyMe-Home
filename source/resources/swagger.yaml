@@ -60,6 +60,8 @@ components:
     Ade7953Configuration:
       type: object
       properties:
+        sampleTime:
+          type: integer
         aVGain:
           type: integer
         aIGain:
@@ -110,6 +112,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "1":
@@ -121,6 +125,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "2":
@@ -132,6 +138,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "3":
@@ -143,6 +151,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "4":
@@ -154,6 +164,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "5":
@@ -165,6 +177,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "6":
@@ -176,6 +190,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "7":
@@ -187,6 +203,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "8":
@@ -198,6 +216,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "9":
@@ -209,6 +229,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "10":
@@ -220,6 +242,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "11":
@@ -231,6 +255,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "12":
@@ -242,6 +268,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "13":
@@ -253,6 +281,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "14":
@@ -264,6 +294,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "15":
@@ -275,6 +307,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
         "16":
@@ -286,6 +320,8 @@ components:
               type: boolean
             label:
               type: string
+            phase:
+              type: integer
             calibrationLabel:
               type: string
     CustomMqtt:
@@ -320,6 +356,34 @@ components:
           type: integer
         "ledBrightness":
           type: integer
+    MonitorData:
+      type: object
+      properties:
+        crashCount:
+          type: integer
+        lastResetReason:
+          type: string
+        lastUnixTime:
+          type: integer
+        resetCount:
+          type: integer
+        breadcrumbs:
+          type: array
+          items:
+            type: object
+            properties:
+              file:
+                type: string
+              function:
+                type: string
+              line:
+                type: integer
+              micros:
+                type: integer
+              heap:
+                type: integer
+              core:
+                type: integer
 
 paths:
   /rest/is-alive:
@@ -359,8 +423,6 @@ paths:
                   productName:
                     type: string
                   productDescription:
-                    type: string
-                  productUrl:
                     type: string
                   githubUrl:
                     type: string
@@ -515,6 +577,32 @@ paths:
                   latest:
                     type: boolean
 
+  /rest/get-current-monitor-data:
+    get:
+      summary: Get current monitor data
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorData'
+
+  /rest/get-crash-data:
+    get:
+      summary: Get crash data from file
+      tags:
+        - System
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorData'
+                
   /do-update:
     post:
       summary: Perform an update
@@ -747,9 +835,13 @@ paths:
                           type: number
                         powerFactor:
                           type: number
-                        activeEnergy:
+                        activeEnergyImported:
                           type: number
-                        reactiveEnergy:
+                        activeEnergyExported:
+                          type: number
+                        reactiveEnergyImported:
+                          type: number
+                        reactiveEnergyExported:
                           type: number
                         apparentEnergy:
                           type: number
@@ -793,9 +885,13 @@ paths:
                         type: number
                       powerFactor:
                         type: number
-                      activeEnergy:
+                      activeEnergyImported:
                         type: number
-                      reactiveEnergy:
+                      activeEnergyExported:
+                        type: number
+                      reactiveEnergyImported:
+                        type: number
+                      reactiveEnergyExported:
                         type: number
                       apparentEnergy:
                         type: number

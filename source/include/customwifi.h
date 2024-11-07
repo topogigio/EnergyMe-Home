@@ -1,5 +1,4 @@
-#ifndef CUSTOMWIFI_H
-#define CUSTOMWIFI_H
+#pragma once
 
 #include <Arduino.h>
 #include <WiFiManager.h>
@@ -12,7 +11,8 @@ class CustomWifi
 {
 public:
     CustomWifi(
-        AdvancedLogger &logger);
+        AdvancedLogger &logger,
+        Led &led);
 
     bool begin();
     void loop();
@@ -27,8 +27,7 @@ private:
     WiFiManager _wifiManager;
 
     AdvancedLogger &_logger;
+    Led &_led;
 
     unsigned long _lastMillisWifiLoop = 0;
 };
-
-#endif

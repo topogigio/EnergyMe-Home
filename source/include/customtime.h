@@ -1,12 +1,11 @@
-#ifndef CUSTOMTIME_H
-#define CUSTOMTIME_H
+#pragma once
 
 #include <Arduino.h>
 #include <TimeLib.h>
 #include <AdvancedLogger.h>
 
 #include "constants.h"
-#include "global.h"
+#include "structs.h"
 
 class CustomTime
 {
@@ -21,8 +20,10 @@ public:
     bool begin();
 
     String timestampFromUnix(long unix);
+    static String timestampFromUnix(long unix, const char *timestampFormat);
 
-    long getUnixTime();
+    static unsigned long getUnixTime();
+    unsigned long long getUnixTimeMilliseconds(); 
     String getTimestamp();
 
 private:
@@ -35,5 +36,3 @@ private:
     GeneralConfiguration &_generalConfiguration;
     AdvancedLogger &_logger;
 };
-
-#endif
