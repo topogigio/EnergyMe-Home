@@ -149,6 +149,10 @@ void CustomServer::_setOta()
     _server.on("/do-update", HTTP_POST, [this](AsyncWebServerRequest *request) {}, [this](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
                {_handleDoUpdate(request, filename, index, data, len, final);});
 
+    // This had to be a GET request as otherwise I could not manage to use a query
+    // parameter in a POST request. This is a workaround to set the MD5 hash for the
+    // firmware update. Ideally, in the same endpoint in which the firmware is uploaded
+    // the MD5 hash should be sent as well as a query parameter.
     _server.on("/set-md5", HTTP_GET, [this](AsyncWebServerRequest *request)
                {
         _serverLog("Request to set MD5", "customserver::_setOta", LogLevel::DEBUG, request);
@@ -489,7 +493,7 @@ void CustomServer::_setRestApi()
 
         JsonDocument _jsonDocument;
         if (!CrashMonitor::getJsonReport(_jsonDocument, crashData)) {
-            request->send(500, "application/json", "{\"message\":\"Error getting crash data\"}");
+            request->send(500, "application/json", "{\"message\":\"Error getting monitoring data\"}");
             return;
         }
 
@@ -503,6 +507,12 @@ void CustomServer::_setRestApi()
         _serverLog("Request to get crash data", "customserver::_setRestApi", LogLevel::DEBUG, request);
 
         TRACE
+        if (!CrashMonitor::checkIfCrashDataExists()) {
+            request->send(404, "application/json", "{\"message\":\"LUCKILY, no crash data is available, YET. Come back when the device goes loco.\"}");
+            return;
+        }
+
+        TRACE
         CrashData _crashData;
         if (!CrashMonitor::getSavedCrashData(_crashData)) {
             request->send(500, "application/json", "{\"message\":\"Could not get crash data\"}");
@@ -513,12 +523,6 @@ void CustomServer::_setRestApi()
         JsonDocument _jsonDocument;
         if (!CrashMonitor::getJsonReport(_jsonDocument, _crashData)) {
             request->send(500, "application/json", "{\"message\":\"Could not create JSON report\"}");
-            return;
-        }
-
-        TRACE
-        if (_jsonDocument.size() > 10000) { // FIMXE: temporary
-            request->send(500, "application/json", "{\"message\":\"Crash data too big\"}");
             return;
         }
 

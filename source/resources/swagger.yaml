@@ -801,6 +801,44 @@ paths:
                   message:
                     type: string
 
+  /wifisave:
+    post:
+      summary: Save WiFi credentials. Available only in AP mode and while connected to the ESP32 at the WiFi "EnergyMe" and IP 192.168.4.1.
+      tags:
+        - System
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                s:
+                  type: string
+                  description: SSID of the WiFi network
+                p:
+                  type: string
+                  description: Password of the WiFi network
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
   /rest/meter:
     get:
       summary: Get all meter values

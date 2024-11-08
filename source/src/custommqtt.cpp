@@ -184,7 +184,7 @@ bool CustomMqtt::_connectMqtt()
 {
     if (!WiFi.isConnected())
     {
-        _logger.warning("WiFi not connected. Skipping MQTT connection", "custommqtt::_connectMqtt");
+        _logger.warning("WiFi not connected. Skipping custom MQTT connection", "custommqtt::_connectMqtt");
         return false;
     }
 

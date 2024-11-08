@@ -103,6 +103,8 @@ void Mqtt::loop() {
             _logger.info("Disconnecting MQTT", "mqtt::mqttLoop");
 
             // Send last messages before disconnecting
+            TRACE
+            _clientMqtt.loop();
             _publishConnectivity(false); // Send offline connectivity as the last will message is not sent with graceful disconnect
             _publishMeter();
             _publishStatus();
@@ -147,6 +149,12 @@ void Mqtt::loop() {
 
 bool Mqtt::_connectMqtt()
 {
+    if (!WiFi.isConnected())
+    {
+        _logger.warning("WiFi not connected. Skipping MQTT connection", "custommqtt::_connectMqtt");
+        return false;
+    }
+
     _logger.debug("Attempt to connect to MQTT (%d/%d)...", "mqtt::_connectMqtt", _mqttConnectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
     if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
         _logger.warning("Failed to connect to MQTT after %d attempts. Temporarely disabling cloud services", "mqtt::_connectMqtt", MQTT_MAX_CONNECTION_ATTEMPT);

@@ -28,8 +28,9 @@ public:
     static bool setFirmwareStatus(FirmwareState status);
     static FirmwareState getFirmwareStatus();
 
-    static bool getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport);
+    static bool checkIfCrashDataExists();
     static bool getSavedCrashData(CrashData& crashDataSaved);
+    static bool getJsonReport(JsonDocument& _jsonDocument, CrashData& crashDataReport);
 
     static bool isLastResetDueToCrash();
 

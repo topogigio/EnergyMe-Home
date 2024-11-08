@@ -82,6 +82,17 @@ void CrashMonitor::_saveCrashData() {
     _logger.debug("Crash data saved", "crashmonitor::_saveCrashData");
 }
 
+bool CrashMonitor::checkIfCrashDataExists() {
+    Preferences _preferences;
+    if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, true)) {
+        _preferences.end();
+        return false;
+    }
+    size_t dataSize = _preferences.getBytesLength(PREFERENCES_DATA_KEY);
+    _preferences.end();
+    return dataSize == sizeof(CrashData);
+}
+
 bool CrashMonitor::getSavedCrashData(CrashData& crashDataSaved) {
     Preferences _preferences;
     if (!_preferences.begin(PREFERENCES_NAMESPACE_CRASHMONITOR, true)) {
