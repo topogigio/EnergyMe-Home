@@ -35,6 +35,8 @@ void getJsonDeviceInfo(JsonDocument& jsonDocument)
     jsonDocument["chip"]["sdkVersion"] = ESP.getSdkVersion();
     jsonDocument["chip"]["id"] = ESP.getEfuseMac();
 
+    jsonDocument["device"]["id"] = getDeviceId();
+
     logger.debug("Device info retrieved", "utils::getJsonDeviceInfo");
 }
 

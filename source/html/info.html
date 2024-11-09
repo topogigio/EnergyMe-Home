@@ -42,6 +42,8 @@
         <p><span class='list-key'>CPU Frequency:</span><span id='chipCpuFrequency' class='list-value'></span> MHz</p>
         <p><span class='list-key'>SDK Version:</span><span id='chipSdkVersion' class='list-value'></span></p>
         <p><span class='list-key'>Flash Chip ID:</span><span id='chipFlashChipId' class='list-value'></span></p>
+        <h3>Device</h3>
+        <p><span class='list-key'>ID:</span><span id='deviceId' class='list-value'></span></p>
     </div>
     <div id="wifiInfo" class="section-box">
         <h2>WiFi Info</h2>
@@ -157,6 +159,8 @@
             document.getElementById('chipCpuFrequency').textContent = data.chip.cpuFrequency;
             document.getElementById('chipSdkVersion').textContent = data.chip.sdkVersion;
             document.getElementById('chipFlashChipId').textContent = data.chip.id;
+
+            document.getElementById('deviceId').textContent = data.device.id;
         }
 
         function displayWifiInfo(data) {

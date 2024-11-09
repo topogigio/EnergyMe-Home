@@ -484,6 +484,11 @@ paths:
                         type: string
                       id:
                         type: integer
+                  device:
+                    type: object
+                    properties:
+                      id:
+                        type: string
 
   /rest/wifi-info:
     get:
