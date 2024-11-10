@@ -34,6 +34,10 @@ void subscribeCallback(const char* topic, byte *payload, unsigned int length) {
             // Restart MQTT connection
             setRestartEsp32("subscribeCallback", "Restarting after successful certificates provisioning");
         }
+    } else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES)) {
+        TRACE
+        clearCertificates();
+        setRestartEsp32("subscribeCallback", "Certificates erase requested from MQTT");
     }
 }
 
@@ -113,6 +117,11 @@ void Mqtt::loop() {
             _publishGeneralConfiguration();
 
             _clientMqtt.disconnect();
+
+            if (!restartConfiguration.isRequired) { // Meaning that the user decided to disable cloud services
+                _logger.info("Erasing certificates...", "mqtt::mqttLoop");
+                clearCertificates();
+            }
 
             _isSetupDone = false;
         }
@@ -686,6 +695,7 @@ void Mqtt::_subscribeToTopics() {
     TRACE
     _subscribeUpdateFirmware();
     _subscribeRestart();
+    _subscribeEraseCertificates();
 
     _logger.debug("Subscribed to topics", "mqtt::_subscribeToTopics");
 }
@@ -707,6 +717,16 @@ void Mqtt::_subscribeRestart() {
     
     if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
         _logger.warning("Failed to subscribe to restart topic", "mqtt::_subscribeRestart");
+    }
+}
+
+void Mqtt::_subscribeEraseCertificates() {
+    _logger.debug("Subscribing to erase certificates topic: %s", "mqtt::_subscribeEraseCertificates", MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES);
+    char _topic[MQTT_MAX_TOPIC_LENGTH];
+    _constructMqttTopic(MQTT_TOPIC_SUBSCRIBE_ERASE_CERTIFICATES, _topic);
+    
+    if (!_clientMqtt.subscribe(_topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+        _logger.warning("Failed to subscribe to erase certificates topic", "mqtt::_subscribeEraseCertificates");
     }
 }
 

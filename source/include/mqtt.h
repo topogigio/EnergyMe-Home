@@ -70,6 +70,7 @@ private:
 
     void _subscribeUpdateFirmware();
     void _subscribeRestart();
+    void _subscribeEraseCertificates();
     void _subscribeProvisioningResponse();
     void _subscribeToTopics();
 

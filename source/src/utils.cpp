@@ -817,7 +817,7 @@ bool setupMdns()
     }
     else
     {
-        logger.error("Error setting up mDNS", "utils::setupMdns");
+        logger.warning("Error setting up mDNS", "utils::setupMdns");
         return false;
     }
 }
