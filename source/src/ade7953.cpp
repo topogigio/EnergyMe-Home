@@ -597,6 +597,13 @@ real advantage would be an accurate value of reactive power, which now is only a
 
 */
 
+/*
+Read all the meter values from the ADE7953.
+A detailed explanation of the inner workings and assumptions
+can be found in the function itself.
+
+@param channel The channel to read the values from
+*/
 void Ade7953::readMeterValues(int channel) {
     long _currentMillis = millis();
     long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
@@ -605,33 +612,42 @@ void Ade7953::readMeterValues(int channel) {
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
 
     float _voltage = 0.0;
-    float _powerFactor = 0.0;
     float _current = 0.0;
     float _activePower = 0.0;
     float _reactivePower = 0.0;
     float _apparentPower = 0.0;
-    int _signActivePower = 1;
-    int _signReactivePower = 1;
+    float _powerFactor = 0.0;
+    float _activeEnergy = 0.0;
+    float _reactiveEnergy = 0.0;
+    float _apparentEnergy = 0.0;
 
     if (channelData[channel].phase == PHASE_1) {
         TRACE
         _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
-        _signActivePower = _readActivePowerInstantaneous(_ade7953Channel) < 0 ? -1 : 1;
-        _current = _readCurrentRms(_ade7953Channel) / channelData[channel].calibrationValues.aLsb * (channelData[channel].reverse ? -1 : 1) * _signActivePower;
+        _current = _readCurrentRms(_ade7953Channel) / channelData[channel].calibrationValues.aLsb;
         
-        _powerFactor = _readPowerFactor(_ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
-        _signReactivePower = _powerFactor < 0 ? -1 : 1;
+        _powerFactor = _readPowerFactor(_ade7953Channel) * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
+        
+        _activeEnergy = _readActiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.whLsb * (channelData[channel].reverse ? -1 : 1);
+        _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.varhLsb * (channelData[channel].reverse ? -1 : 1);
+        _apparentEnergy = _readApparentEnergy(_ade7953Channel) / channelData[channel].calibrationValues.vahLsb;
 
-        _activePower = _current * _voltage * abs(_powerFactor); 
-        _apparentPower = _current * _voltage;
-        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower; // This is incorrect but it is the best we can do
+        // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
+        // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
+        _activePower = _activeEnergy / (_sampleTime / 1000.0 / 3600.0); // W
+        _reactivePower = _reactiveEnergy / (_sampleTime / 1000.0 / 3600.0); // var
+        _apparentPower = _apparentEnergy / (_sampleTime / 1000.0 / 3600.0); // VA
+
     } else { // Assume everything is the same as channel 0 except the current
+        // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
+        // It is easier just to ensure during installation that the CTs are installed correctly
+
         TRACE
         // Assume from channel 0
         _voltage = meterValues[0].voltage; // Assume the voltage is the same for all channels (weak assumption but difference usually is in the order of few volts, so less than 1%)
         
         // Read wrong power factor due to the phase shift
-        _powerFactor = _readPowerFactor(_ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR * (channelData[channel].reverse ? -1 : 1);
+        float _powerFactorPhaseOne = _readPowerFactor(_ade7953Channel)  * POWER_FACTOR_CONVERSION_FACTOR;
 
         // Compute the correct power factor assuming 120 degrees phase shift in voltage (solid assumption)
         // The idea is to:
@@ -645,21 +661,21 @@ void Ade7953::readMeterValues(int channel) {
         // line cycle. As such, the power factor is the only reliable reading and it cannot provide information about the direction of the power.
 
         if (channelData[channel].phase == PHASE_2) {
-            _powerFactor = cos(acos(_powerFactor) - (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
+            _powerFactor = cos(acos(_powerFactorPhaseOne) - (2 * PI / 3));
         } else if (channelData[channel].phase == PHASE_3) {
             // I cannot prove why, but I am SURE the minus is needed if the phase is leading (phase 3)
-            _powerFactor = - cos(acos(_powerFactor) + (2 * PI / 3)) * (channelData[channel].reverse ? -1 : 1);
+            _powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
         } else {
             _logger.error("Invalid phase %d for channel %d", "ade7953::readMeterValues", channelData[channel].phase, channel);
         }
 
         // Read the current
-        _current = _readCurrentRms(_ade7953Channel) / channelData[channel].calibrationValues.aLsb * (channelData[channel].reverse ? -1 : 1);
+        _current = _readCurrentRms(_ade7953Channel) / channelData[channel].calibrationValues.aLsb;
         
         // Compute power values
         _activePower = _current * _voltage * abs(_powerFactor);
         _apparentPower = _current * _voltage;
-        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)) * _signReactivePower;
+        _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)); // Approximation
     }
 
     TRACE
@@ -670,13 +686,7 @@ void Ade7953::readMeterValues(int channel) {
     meterValues[channel].apparentPower = _validatePower(meterValues[channel].apparentPower, _apparentPower);
     meterValues[channel].powerFactor = _validatePowerFactor(meterValues[channel].powerFactor, _powerFactor);
 
-    TRACE
-    // Even though the energy is not directly used, we can use the ADE7953 register for the no-load feature (enabled during setup)
-    float _activeEnergy = _readActiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.whLsb * _signActivePower;
-    float _reactiveEnergy = _readReactiveEnergy(_ade7953Channel) / channelData[channel].calibrationValues.varhLsb * _signReactivePower;
-    float _apparentEnergy = _readApparentEnergy(_ade7953Channel) / channelData[channel].calibrationValues.vahLsb;
-
-    // If the phase is not Phase 1, set the energy to 1 if the current is above 0.003 A since we cannot  use the no-load future in this approximation
+    // If the phase is not Phase 1, set the energy to 1 (not 0) if the current is above 0.003 A since we cannot use the ADE7593 no-load future in this approximation
     if (channelData[channel].phase != PHASE_1 && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
         _activeEnergy = 1;
         _reactiveEnergy = 1;
@@ -685,20 +695,20 @@ void Ade7953::readMeterValues(int channel) {
 
     // Leverage the no-load feature of the ADE7953 to discard the noise
     // As such, when the energy read by the ADE7953 in the given linecycle is below
-    // a certain threshold (set before), the read value is 0
+    // a certain threshold (set during setup), the read value is 0
     if (_activeEnergy > 0) {
-        meterValues[channel].activeEnergyImported += meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0; // W * ms * s / 1000 ms * h / 3600 s = Wh
+        meterValues[channel].activeEnergyImported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
     } else if (_activeEnergy < 0) {
-        meterValues[channel].activeEnergyExported += - meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0; // W * ms * s / 1000 ms * h / 3600 s = Wh
+        meterValues[channel].activeEnergyExported += abs(meterValues[channel].activePower * _deltaMillis / 1000.0 / 3600.0); // W * ms * s / 1000 ms * h / 3600 s = Wh
     } else {
         meterValues[channel].activePower = 0.0;
         meterValues[channel].powerFactor = 0.0;
     }
 
     if (_reactiveEnergy > 0) {
-        meterValues[channel].reactiveEnergyImported += meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0; // var * ms * s / 1000 ms * h / 3600 s = VArh
+        meterValues[channel].reactiveEnergyImported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
     } else if (_reactiveEnergy < 0) {
-        meterValues[channel].reactiveEnergyExported += - meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0; // var * ms * s / 1000 ms * h / 3600 s = VArh
+        meterValues[channel].reactiveEnergyExported += abs(meterValues[channel].reactivePower * _deltaMillis / 1000.0 / 3600.0); // var * ms * s / 1000 ms * h / 3600 s = VArh
     } else {
         meterValues[channel].reactivePower = 0.0;
     }
@@ -1029,6 +1039,16 @@ long Ade7953::_readApparentPowerInstantaneous(int channel) {
     else {return readRegister(BVA_32, 32, true);}
 }
 
+/*
+Reads the "instantaneous" active power.
+
+"Instantaneous" because the active power is only defined as the dc component
+of the instantaneous power signal, which is V_RMS * I_RMS - V_RMS * I_RMS * cos(2*omega*t). 
+It is updated at 6.99 kHz.
+
+@param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
+@return The active power in LSB.
+*/
 long Ade7953::_readActivePowerInstantaneous(int channel) {
     if (channel == CHANNEL_A) {return readRegister(AWATT_32, 32, true);} 
     else {return readRegister(BWATT_32, 32, true);}
@@ -1039,20 +1059,59 @@ long Ade7953::_readReactivePowerInstantaneous(int channel) {
     else {return readRegister(BVAR_32, 32, true);}
 }
 
+
+/*
+Reads the actual instantaneous current. 
+
+This allows you to
+see the actual sinusoidal waveform, so both positive and
+negative values. At full scale (so 500 mV), the value
+returned is 9032007d.
+
+@param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
+@return The actual instantaneous current in LSB.
+*/
 long Ade7953::_readCurrentInstantaneous(int channel) {
     if (channel == CHANNEL_A) {return readRegister(IA_32, 32, true);} 
     else {return readRegister(IB_32, 32, true);}
 }
 
+/*
+Reads the actual instantaneous voltage. 
+
+This allows you 
+to see the actual sinusoidal waveform, so both positive
+and negative values. At full scale (so 500 mV), the value
+returned is 9032007d.
+
+@return The actual instantaneous voltage in LSB.
+*/
 long Ade7953::_readVoltageInstantaneous() {
     return readRegister(V_32, 32, true);
 }
 
+/*
+Reads the current in RMS.
+
+This measurement is updated at 6.99 kHz and has a settling
+time of 200 ms. The value is in LSB.
+
+@param channel The channel to read from. Either CHANNEL_A or CHANNEL_B.
+@return The current in RMS in LSB.
+*/
 long Ade7953::_readCurrentRms(int channel) {
     if (channel == CHANNEL_A) {return readRegister(IRMSA_32, 32, false);} 
     else {return readRegister(IRMSB_32, 32, false);}
 }
 
+/*
+Reads the voltage in RMS.
+
+This measurement is updated at 6.99 kHz and has a settling
+time of 200 ms. The value is in LSB.
+
+@return The voltage in RMS in LSB.
+*/
 long Ade7953::_readVoltageRms() {
     return readRegister(VRMS_32, 32, false);
 }

@@ -2,21 +2,21 @@
     "SCT-013-30A-1V": {
         "vLsb": 25779.0,
         "aLsb": 301070.0,
-        "wLsb": 464.68,
-        "varLsb": 464.68,
-        "vaLsb": 464.68,
-        "whLsb": 71531.0,
-        "varhLsb": 71531.0,
-        "vahLsb": 71531.0
+        "wLsb": 462.59,
+        "varLsb": 462.59,
+        "vaLsb": 462.59,
+        "whLsb": 70861.0,
+        "varhLsb": 70861.0,
+        "vahLsb": 70861.0
     },
     "SCT-013-50A-1V": {
         "vLsb": 25779.0,
         "aLsb": 180640.0,
-        "wLsb": 278.77,
-        "varLsb": 278.77,
-        "vaLsb": 278.77,
-        "whLsb": 42735.0,
-        "varhLsb": 42735.0,
-        "vahLsb": 42735.0
+        "wLsb": 277.56,
+        "varLsb": 277.56,
+        "vaLsb": 277.56,
+        "whLsb": 42517.0,
+        "varhLsb": 42517.0,
+        "vahLsb": 42517.0
     }
 }

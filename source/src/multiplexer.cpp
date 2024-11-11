@@ -14,6 +14,10 @@ void Multiplexer::begin()
     pinMode(_s1, OUTPUT);
     pinMode(_s2, OUTPUT);
     pinMode(_s3, OUTPUT);
+
+    // At boot, set the multiplexer to channel 1 (channel 0 of the multiplexer)
+    // To avoid incorrect first readings 
+    setChannel(0);
 }
 
 void Multiplexer::setChannel(int channel)
