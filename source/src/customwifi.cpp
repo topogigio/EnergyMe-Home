@@ -40,7 +40,7 @@ void CustomWifi::loop()
   if (millis() - _lastMillisWifiLoop < WIFI_LOOP_INTERVAL) return;  
 
   _lastMillisWifiLoop = millis();
-  if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.isConnected()) return;
 
   _logger.warning("WiFi connection lost. Reconnecting...", "customwifi::wifiLoop");
   _connectToWifi();

@@ -31,6 +31,8 @@ void CustomMqtt::loop()
     if ((millis() - _lastMillisMqttLoop) < MQTT_CUSTOM_LOOP_INTERVAL) return;
     _lastMillisMqttLoop = millis();
 
+    if (!WiFi.isConnected()) return;
+
     if (!_customMqttConfiguration.enabled)
     {
         if (_isSetupDone)
@@ -182,12 +184,6 @@ void CustomMqtt::_disable() {
 
 bool CustomMqtt::_connectMqtt()
 {
-    if (!WiFi.isConnected())
-    {
-        _logger.warning("WiFi not connected. Skipping custom MQTT connection", "custommqtt::_connectMqtt");
-        return false;
-    }
-
     _logger.debug("Attempt to connect to custom MQTT (%d/%d)...", "custommqtt::_connectMqtt", _mqttConnectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
     if (_mqttConnectionAttempt >= MQTT_CUSTOM_MAX_CONNECTION_ATTEMPT)
     {

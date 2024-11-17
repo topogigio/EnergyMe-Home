@@ -95,6 +95,8 @@ void Mqtt::loop() {
     if ((millis() - _lastMillisMqttLoop) < MQTT_LOOP_INTERVAL) return;
     _lastMillisMqttLoop = millis();
 
+    if (!WiFi.isConnected()) return;
+
     TRACE
     if (_isClaimInProgress) { // Only wait for certificates to be claimed
         _clientMqtt.loop();
@@ -158,12 +160,6 @@ void Mqtt::loop() {
 
 bool Mqtt::_connectMqtt()
 {
-    if (!WiFi.isConnected())
-    {
-        _logger.warning("WiFi not connected. Skipping MQTT connection", "custommqtt::_connectMqtt");
-        return false;
-    }
-
     _logger.debug("Attempt to connect to MQTT (%d/%d)...", "mqtt::_connectMqtt", _mqttConnectionAttempt + 1, MQTT_MAX_CONNECTION_ATTEMPT);
     if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
         _logger.warning("Failed to connect to MQTT after %d attempts. Temporarely disabling cloud services", "mqtt::_connectMqtt", MQTT_MAX_CONNECTION_ATTEMPT);
@@ -292,6 +288,7 @@ void Mqtt::_claimProcess() {
 
     if (_connectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPT) {
         _logger.error("Failed to connect to MQTT for claiming certificates after %d attempts", "mqtt::_claimProcess", MQTT_MAX_CONNECTION_ATTEMPT);
+        setRestartEsp32("mqtt::_claimProcess", "Failed to claim certificates");
         return;
     }
 
