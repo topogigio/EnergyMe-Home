@@ -333,6 +333,7 @@ void loop() {
         // we let one cycle pass before we start reading the values
         if (mainFlags.isfirstLinecyc) {
             mainFlags.isfirstLinecyc = false;
+            ade7953.purgeEnergyRegister(mainFlags.currentChannel);
         } else {
             mainFlags.isfirstLinecyc = true;
 

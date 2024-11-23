@@ -32,6 +32,7 @@ public:
     void loop();
 
     void readMeterValues(int channel);
+    void purgeEnergyRegister(int channel);
 
     bool isLinecycFinished();
 

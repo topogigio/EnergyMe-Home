@@ -544,6 +544,7 @@ void Ade7953::_updateSampleTime() {
     _logger.debug("Successfully updated sample time", "ade7953::updateSampleTime");
 }
 
+// This returns the next channel (except 0) that is active
 int Ade7953::findNextActiveChannel(int currentChannel) {
     for (int i = currentChannel + 1; i < CHANNEL_COUNT; i++) {
         if (channelData[i].active && i != 0) {
@@ -719,6 +720,18 @@ void Ade7953::readMeterValues(int channel) {
         meterValues[channel].current = 0.0;
         meterValues[channel].apparentPower = 0.0;
     }
+}
+
+// This method is needed to reset the energy values since we need to "purge"
+// the first linecyc when switching channels in the multiplexer. This is due
+// to the fact that the ADE7953 needs to settle for 200 ms before we can 
+// properly read the the meter values
+void Ade7953::purgeEnergyRegister(int channel) {
+    int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;
+
+    _readActiveEnergy(_ade7953Channel);
+    _readReactiveEnergy(_ade7953Channel);
+    _readApparentEnergy(_ade7953Channel);
 }
 
 float Ade7953::_validateValue(float oldValue, float newValue, float min, float max) {
