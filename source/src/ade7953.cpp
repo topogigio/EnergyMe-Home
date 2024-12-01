@@ -608,6 +608,16 @@ can be found in the function itself.
 void Ade7953::readMeterValues(int channel) {
     long _currentMillis = millis();
     long _deltaMillis = _currentMillis - meterValues[channel].lastMillis;
+
+    // Ensure the reading is not being called too early (should not happen anyway)
+    // This was introduced as in channel 0 it was noticed that sometimes two meter values
+    // were sent with 1 ms difference, where the second one had 0 active power (since most
+    // probably the next line cycle was not yet finished)
+    // We use the time multiplied by 0.8 to keep some headroom
+    if (_deltaMillis < DEFAULT_SAMPLE_TIME * 0.8) {
+        return;
+    } 
+
     meterValues[channel].lastMillis = _currentMillis;
 
     int _ade7953Channel = (channel == 0) ? CHANNEL_A : CHANNEL_B;

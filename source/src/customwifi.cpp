@@ -3,6 +3,7 @@
 CustomWifi::CustomWifi(
     AdvancedLogger &logger, Led &led) : _logger(logger), _led(led) {}
 
+//TODO: modify this code to constantly try to connect to the old WiFi while keeping the captive portal active
 bool CustomWifi::begin()
 {
   _logger.debug("Setting up WiFi...", "customwifi::setupWifi");

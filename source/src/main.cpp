@@ -278,6 +278,7 @@ void setup() {
     customWifi.begin();
     logger.info("WiFi setup done", "main::setup");
 
+    // TODO: if the time syncronization fails, the MQTT cannot work. In any case, we need to retry the time syncronization every X time in the loop if it fails
     TRACE
     logger.info("Syncing time...", "main::setup");
     updateTimezone();

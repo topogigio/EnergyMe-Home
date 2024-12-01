@@ -91,6 +91,8 @@ void Mqtt::begin() {
     _isSetupDone = true;
 }
 
+// TODO: modify this to just keep trying the connection without logging it. And if it keeps failing after a certain number of attempts, then just erase the certificates
+// but never disable the cloud services
 void Mqtt::loop() {
     if ((millis() - _lastMillisMqttLoop) < MQTT_LOOP_INTERVAL) return;
     _lastMillisMqttLoop = millis();
