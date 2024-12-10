@@ -87,6 +87,9 @@ private:
     void _updateChannelData();
     bool _validateChannelDataJson(JsonDocument &jsonDocument);
 
+    Phase _getLaggingPhase(Phase phase);
+    Phase _getLeadingPhase(Phase phase);
+
     void _updateSampleTime();
 
     void _setEnergyFromSpiffs();

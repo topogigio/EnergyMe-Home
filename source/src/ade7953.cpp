@@ -632,7 +632,9 @@ void Ade7953::readMeterValues(int channel) {
     float _reactiveEnergy = 0.0;
     float _apparentEnergy = 0.0;
 
-    if (channelData[channel].phase == PHASE_1) {
+    Phase _basePhase = channelData[0].phase;
+
+    if (channelData[channel].phase == _basePhase) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
         TRACE
         _voltage = _readVoltageRms() / channelData[channel].calibrationValues.vLsb;
         _current = _readCurrentRms(_ade7953Channel) / channelData[channel].calibrationValues.aLsb;
@@ -671,10 +673,10 @@ void Ade7953::readMeterValues(int channel) {
         // is the power factor, while the angle only gives the angle difference of the current reading instead of the one of the whole 
         // line cycle. As such, the power factor is the only reliable reading and it cannot provide information about the direction of the power.
 
-        if (channelData[channel].phase == PHASE_2) {
+        if (channelData[channel].phase == _getLaggingPhase(_basePhase)) {
             _powerFactor = cos(acos(_powerFactorPhaseOne) - (2 * PI / 3));
-        } else if (channelData[channel].phase == PHASE_3) {
-            // I cannot prove why, but I am SURE the minus is needed if the phase is leading (phase 3)
+        } else if (channelData[channel].phase == _getLeadingPhase(_basePhase)) {
+            // I cannot prove why, but I am SURE the minus is needed if the phase is leading
             _powerFactor = - cos(acos(_powerFactorPhaseOne) + (2 * PI / 3));
         } else {
             _logger.error("Invalid phase %d for channel %d", "ade7953::readMeterValues", channelData[channel].phase, channel);
@@ -689,6 +691,8 @@ void Ade7953::readMeterValues(int channel) {
         _reactivePower = sqrt(pow(_apparentPower, 2) - pow(_activePower, 2)); // Approximation
     }
 
+    _apparentPower = abs(_apparentPower); // Apparent power must be positive
+
     TRACE
     meterValues[channel].voltage = _validateVoltage(meterValues[channel].voltage, _voltage);
     meterValues[channel].current = _validateCurrent(meterValues[channel].current, _current);
@@ -698,7 +702,7 @@ void Ade7953::readMeterValues(int channel) {
     meterValues[channel].powerFactor = _validatePowerFactor(meterValues[channel].powerFactor, _powerFactor);
 
     // If the phase is not Phase 1, set the energy to 1 (not 0) if the current is above 0.003 A since we cannot use the ADE7593 no-load future in this approximation
-    if (channelData[channel].phase != PHASE_1 && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+    if (channelData[channel].phase != channelData[0].phase && _current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
         _activeEnergy = 1;
         _reactiveEnergy = 1;
         _apparentEnergy = 1;
@@ -729,6 +733,35 @@ void Ade7953::readMeterValues(int channel) {
     } else {
         meterValues[channel].current = 0.0;
         meterValues[channel].apparentPower = 0.0;
+    }
+}
+
+
+// Poor man's phase shift (doing with modulus didn't work properly,
+// and in any case the phases will always be at most 3)
+Phase Ade7953::_getLaggingPhase(Phase phase) {
+    switch (phase) {
+        case PHASE_1:
+            return PHASE_2;
+        case PHASE_2:
+            return PHASE_3;
+        case PHASE_3:
+            return PHASE_1;
+        default:
+            return PHASE_1;
+    }
+}
+
+Phase Ade7953::_getLeadingPhase(Phase phase) {
+    switch (phase) {
+        case PHASE_1:
+            return PHASE_3;
+        case PHASE_2:
+            return PHASE_1;
+        case PHASE_3:
+            return PHASE_2;
+        default:
+            return PHASE_1;
     }
 }
 

@@ -359,7 +359,7 @@ void restartEsp32() {
 // -----------------------------
 
 void printMeterValues(MeterValues meterValues, const char* channelLabel) {
-    logger.verbose(
+    logger.debug(
         "%s: %.1f V | %.3f A || %.1f W | %.1f VAR | %.1f VA | %.3f PF || %.3f Wh | %.3f Wh | %.3f VARh | %.3f VARh | %.3f VAh", 
         "utils::printMeterValues", 
         channelLabel, 

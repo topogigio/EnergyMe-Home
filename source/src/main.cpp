@@ -342,8 +342,6 @@ void loop() {
               TRACE
               ade7953.readMeterValues(mainFlags.currentChannel);
 
-              multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
-
               TRACE
               payloadMeter.push(
               PayloadMeter(
@@ -356,8 +354,10 @@ void loop() {
               
               printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
             }
-        
+
+            TRACE
             mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
+            multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
         }
 
         // We always read the first channel as it is in a separate channel and is not impacted by the switching of the multiplexer
