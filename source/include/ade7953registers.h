@@ -12,7 +12,7 @@
 #define WRITE_PROTECT_8 0x040 //WRITE_PROTECT, (R/W) Default: 0x00, Unsigned, Write protection bits (Bits[2:0]) 
 #define LAST_OP_8 0x0FD //LAST_OP, (R/W) Default: 0x00, Unsigned, Contains the type (read or write) of the last successful communication (0x35 read 0xCA = write) 
 #define LAST_RWDATA_8 0x0FF //LAST_RWDATA_8, (R/W) Default: 0x00, Unsigned, Contains the data from the last successful 8-bit register communication  
-#define Version_8 0x702 //Version, (R/W) Default: N/A, Unsigned, Contains the silicon version number 
+#define VERSION_8 0x702 //Version, (R/W) Default: N/A, Unsigned, Contains the silicon version number 
 #define EX_REF_8 0x800 //EX_REF, (R/W) Default: 0x00, Unsigned, Reference input configuration:0 = internal 1 = external 
 
 //16-bit Registers
@@ -28,7 +28,7 @@
 #define PFB_16 0x10B //PFB, (R) Default:0x0000, Signed,Power factor (Current Channel B) 
 #define ANGLE_A_16 0x10C //ANGLE_A, (R) Default:0x0000, Signed,Angle between the voltage input and the Current Channel A input 
 #define ANGLE_B_16 0x10D //ANGLE_B, (R) Default:0x0000, Signed,Angle between the voltage input and the Current Channel B input 
-#define Period_16 0x11E //Period, (R) Default:0x0000, Unsigned, Period register 
+#define PERIOD_16 0x10E //Period, (R) Default:0x0000, Unsigned, Period register 
 #define ALT_OUTPUT_16 0x110 //ALT_OUTPUT, (R/W) Default:0x0000, Unsigned,Alternative output functions**/
 #define LAST_ADD_16 0x1FE //LAST_ADD, (R) Default:0x0000, Unsigned, Contains the address of the last successful communication 
 #define LAST_RWDATA_16 0x1FF //LAST_RWDATA_16, (R) Default:0x0000, Unsigned,Contains the data from the last successful 16-bit register communication 
@@ -435,3 +435,7 @@ Setting Reactive Energy Accumulation Mode (Current Channel B)
 #define WRITE_TRANSFER 0x00 // Part of the address to write a register
 
 //*******************************************************************************************
+
+// Communication verification constants
+#define LAST_OP_READ_VALUE 0x35    // Value stored in LAST_OP register after a read operation
+#define LAST_OP_WRITE_VALUE 0xCA   // Value stored in LAST_OP register after a write operation

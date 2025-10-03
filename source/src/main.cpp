@@ -1,11 +1,21 @@
+/*
+EnergyMe - Home
+Copyright (C) 2025 Jibril Sharafi
+*/
+
 #include <Arduino.h>
-#include <SPIFFS.h>
-#include <WiFiManager.h> // Needs to be defined on top due to conflict between WiFiManager and ESPAsyncWebServer
-#include <CircularBuffer.hpp>
+#include <AdvancedLogger.h>
+#include <LittleFS.h>
 
 // Project includes
-#include "ade7953.h"
+// Initialization before everything
 #include "constants.h"
+#include "structs.h"
+#include "utils.h"
+#include "pins.h"
+
+#include "ade7953.h"
+#include "buttonhandler.h"
 #include "crashmonitor.h"
 #include "customwifi.h" // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
 #include "customserver.h"
@@ -13,384 +23,156 @@
 #include "modbustcp.h"
 #include "mqtt.h"
 #include "custommqtt.h"
+#include "influxdbclient.h"
 #include "multiplexer.h"
-#include "structs.h"
-#include "utils.h"
+#include "customlog.h"
 
 // Global variables
 // --------------------
 
-RestartConfiguration restartConfiguration;
-PublishMqtt publishMqtt;
+Statistics statistics; // Move both to utils and use getter to get and set them
+char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
 
-MainFlags mainFlags;
+void setup()
+{
+  Serial.begin(SERIAL_BAUDRATE);
+  Serial.printf("EnergyMe - Home\n____________________\n\n");
+  Serial.println("Booting...");
+  Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
+  Serial.printf("Build date: %s %s\n", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
 
-GeneralConfiguration generalConfiguration;
-CustomMqttConfiguration customMqttConfiguration;
-RTC_NOINIT_ATTR CrashData crashData;
+  // Initialize global device ID
+  getDeviceId(DEVICE_ID, sizeof(DEVICE_ID));
+  Serial.printf("Device ID: %s\n", DEVICE_ID);
 
-WiFiClientSecure net = WiFiClientSecure();
-PubSubClient clientMqtt(net);
+  // Need to call this once and at begin to ensure PSRAM is used for all mbedtls (both for OTA and MQTT connection. and maybe InfluxDB)
+  mbedtls_platform_set_calloc_free(ota_calloc_psram, ota_free_psram);
 
-WiFiClient customNet;
-PubSubClient customClientMqtt(customNet);
+  Serial.println("Setting up LED...");
+  Led::begin(LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);
+  Serial.println("LED setup done");
 
-CircularBuffer<PayloadMeter, PAYLOAD_METER_MAX_NUMBER_POINTS> payloadMeter;
+  Led::setWhite(Led::PRIO_NORMAL);
 
-AsyncWebServer server(WEBSERVER_PORT);
+  if (!isFirstBootDone())
+  {
+    setFirstBootDone();
+    createAllNamespaces();
+    LOG_INFO("First boot setup complete. Welcome aboard!");
+  }
 
-// Callback variables
-CircularBuffer<LogJson, LOG_BUFFER_SIZE> logBuffer;
-char jsonBuffer[LOG_JSON_BUFFER_SIZE];  // Pre-allocated buffer
-String deviceId;      // Pre-allocated buffer
+  if (!LittleFS.begin(true)) // Ensure the partition name is "spiffs" in partitions.csv (even when using LittleFS). Setting the partition label to "littlefs" caused issues
+  {
+    Serial.println("LittleFS initialization failed!");
+    ESP.restart();
+    return;
+  }
 
-// Classes instances
-// --------------------
+  Led::setYellow(Led::PRIO_NORMAL);
+  AdvancedLogger::begin(LOG_PATH);
+  LOG_DEBUG("AdvancedLogger initialized with log path: %s", LOG_PATH);
+  
+  LOG_DEBUG("Setting up callbacks for AdvancedLogger...");
+  AdvancedLogger::setCallback(CustomLog::callbackMultiple);
+  LOG_DEBUG("Callbacks for AdvancedLogger set up successfully");
 
-AdvancedLogger logger(
-  LOG_PATH,
-  LOG_CONFIG_PATH,
-  LOG_TIMESTAMP_FORMAT
-);
+  LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
+  LOG_INFO("Build version: %s | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
+  
+  LOG_DEBUG("Setting up crash monitor...");
+  CrashMonitor::begin();
+  LOG_INFO("Crash monitor setup done");
 
-CrashMonitor crashMonitor(
-  logger
-);
+  printDeviceStatusStatic();
 
-Led led(
-  LED_RED_PIN, 
-  LED_GREEN_PIN, 
-  LED_BLUE_PIN, 
-  DEFAULT_LED_BRIGHTNESS
-);
+  Led::setPurple(Led::PRIO_NORMAL);
+  LOG_DEBUG("Setting up multiplexer...");
+  Multiplexer::begin(
+      MULTIPLEXER_S0_PIN,
+      MULTIPLEXER_S1_PIN,
+      MULTIPLEXER_S2_PIN,
+      MULTIPLEXER_S3_PIN);
+  LOG_INFO("Multiplexer setup done");
 
-Multiplexer multiplexer(
-  MULTIPLEXER_S0_PIN,
-  MULTIPLEXER_S1_PIN,
-  MULTIPLEXER_S2_PIN,
-  MULTIPLEXER_S3_PIN
-);
+  LOG_DEBUG("Setting up button handler...");
+  ButtonHandler::begin(BUTTON_GPIO0_PIN);
+  LOG_INFO("Button handler setup done");
 
-CustomWifi customWifi(
-  logger,
-  led
-);
+  LOG_DEBUG("Setting up ADE7953...");
+  if (Ade7953::begin(
+      ADE7953_SS_PIN,
+      ADE7953_SCK_PIN,
+      ADE7953_MISO_PIN,
+      ADE7953_MOSI_PIN,
+      ADE7953_RESET_PIN,
+      ADE7953_INTERRUPT_PIN)
+    ) {
+      LOG_INFO("ADE7953 setup done");
+  } else {
+      LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
+  }
 
-CustomTime customTime(
-  NTP_SERVER,
-  TIME_SYNC_INTERVAL,
-  TIMESTAMP_FORMAT,
-  generalConfiguration,
-  logger
-);
+  Led::setBlue(Led::PRIO_NORMAL);
+  LOG_DEBUG("Setting up WiFi...");
+  CustomWifi::begin();
+  LOG_INFO("WiFi setup done");
 
-Ade7953 ade7953(
-  SS_PIN,
-  SCK_PIN,
-  MISO_PIN,
-  MOSI_PIN,
-  ADE7953_RESET_PIN,
-  logger,
-  customTime,
-  mainFlags
-);
+  while (!CustomWifi::isFullyConnected()) // TODO: maybe we can move this and everything related to wifi connection to the wifi itself and handle it async
+  {
+    LOG_DEBUG("Waiting for full WiFi connection...");
+    delay(1000);
+  }
 
-ModbusTcp modbusTcp(
-  MODBUS_TCP_PORT, 
-  MODBUS_TCP_SERVER_ID, 
-  MODBUS_TCP_MAX_CLIENTS, 
-  MODBUS_TCP_TIMEOUT,
-  logger,
-  ade7953,
-  customTime
-);
+  // Add UDP logging setup after WiFi
+  LOG_DEBUG("Setting up UDP logging...");
+  CustomLog::begin();
+  LOG_INFO("UDP logging setup done");
 
-CustomMqtt customMqtt(
-  ade7953,
-  logger,
-  customClientMqtt,
-  customMqttConfiguration,
-  mainFlags
-);
+  LOG_DEBUG("Syncing time...");
+  if (CustomTime::begin()) LOG_INFO("Initial time sync successful");
+  else LOG_ERROR("Initial time sync failed! Will retry later.");
 
-Mqtt mqtt(
-  ade7953,
-  logger,
-  customTime,
-  clientMqtt,
-  net,
-  publishMqtt,
-  payloadMeter
-);
+  LOG_DEBUG("Setting up server...");
+  CustomServer::begin();
+  LOG_INFO("Server setup done");
 
-CustomServer customServer(
-  server,
-  logger,
-  led,
-  ade7953,
-  customTime,
-  customWifi,
-  customMqtt
-);
+  LOG_DEBUG("Setting up Modbus TCP...");
+  ModbusTcp::begin();
+  LOG_INFO("Modbus TCP setup done");
 
-// Main functions
-// --------------------
-// Callback 
+  #ifdef HAS_SECRETS
+  LOG_DEBUG("Setting up MQTT client...");
+  Mqtt::begin();
+  LOG_INFO("MQTT client setup done");
+  #endif
 
-void callbackLogToMqtt(
-    const char* timestamp,
-    unsigned long millisEsp,
-    const char* level,
-    unsigned int coreId,
-    const char* function,
-    const char* message
-) {
-    if (strcmp(level, "debug") == 0 || strcmp(level, "verbose") == 0) return;
+  LOG_DEBUG("Setting up Custom MQTT client...");
+  CustomMqtt::begin();
+  LOG_INFO("Custom MQTT client setup done");
 
-    if (deviceId == "") {
-        deviceId = WiFi.macAddress();
-        deviceId.replace(":", "");
-    }
+  LOG_DEBUG("Setting up InfluxDB client...");
+  InfluxDbClient::begin();
+  LOG_INFO("InfluxDB client setup done");
 
-    logBuffer.push(
-      LogJson(
-        timestamp,
-        millisEsp,
-        level,
-        coreId,
-        function,
-        message
-      )
-    );
+  LOG_DEBUG("Starting maintenance task...");
+  startMaintenanceTask();
+  LOG_INFO("Maintenance task started");
 
-    if (WiFi.status() != WL_CONNECTED) return;
-    if (!clientMqtt.connected()) return; 
+  Led::setGreen(Led::PRIO_NORMAL);
+  printStatistics();
+  printDeviceStatusDynamic();
+  LOG_INFO("Setup done! Let's get this energetic party started!");
 
-    unsigned int _loops = 0;
-    while (!logBuffer.isEmpty() && _loops < MAX_LOOP_ITERATIONS) {
-        _loops++;
-
-        LogJson _log = logBuffer.shift();
-        size_t totalLength = strlen(_log.timestamp) + strlen(_log.function) + strlen(_log.message) + 100;
-        if (totalLength > sizeof(jsonBuffer)) {
-            Serial.println("Log message too long for buffer");
-            continue;
-        }
-
-        snprintf(jsonBuffer, sizeof(jsonBuffer),
-            "{\"timestamp\":\"%s\","
-            "\"millis\":%lu,"
-            "\"core\":%u,"
-            "\"function\":\"%s\","
-            "\"message\":\"%s\"}",
-            _log.timestamp,
-            _log.millisEsp,
-            _log.coreId,
-            _log.function,
-            _log.message);
-
-        char topic[LOG_TOPIC_SIZE];
-        snprintf(topic, sizeof(topic), "energyme/home/%s/log/%s", deviceId.c_str(), _log.level);
-
-        if (!clientMqtt.publish(topic, jsonBuffer)) {
-            Serial.printf("MQTT publish failed to %s. Error: %d\n", 
-                topic, clientMqtt.state());
-            logBuffer.push(_log);
-            break;
-        }
-    }
+  // Since in the loop there is nothing we care about, let's just kill the main task to gain some heap
+  delay(1000);
+  vTaskDelete(NULL);
 }
 
-void setup() {
-    Serial.begin(SERIAL_BAUDRATE);
-    Serial.printf("EnergyMe - Home\n____________________\n\n");
-    Serial.println("Booting...");
-    Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
-    Serial.printf("Build date: %s %s\n", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
-    
-    Serial.println("Setting up LED...");
-    led.begin();
-    Serial.println("LED setup done");
-    led.setYellow(); // Indicate we're in early boot/crash check
-
-    if (!SPIFFS.begin(true)) {
-        Serial.println("SPIFFS initialization failed!");
-        ESP.restart();
-        return;
-    }
-    led.setWhite();
-    
-    logger.begin();
-    logger.setCallback(callbackLogToMqtt);
-
-    logger.info("Booting...", "main::setup");  
-    logger.info("EnergyMe - Home | Build version: %s | Build date: %s %s", "main::setup", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
-
-    
-    logger.info("Setting up crash monitor...", "main::setup");
-    crashMonitor.begin();
-    logger.info("Crash monitor setup done", "main::setup");
-
-    led.setCyan();
-
-    TRACE
-    logger.info("Checking for missing files...", "main::setup");
-    auto missingFiles = checkMissingFiles();
-    if (!missingFiles.empty()) {
-        led.setOrange();
-        logger.warning("Missing files detected. Creating default files for missing files...", "main::setup");
-        
-        TRACE
-        createDefaultFilesForMissingFiles(missingFiles);
-
-        logger.info("Default files created for missing files", "main::setup");
-    } else {
-        logger.info("No missing files detected", "main::setup");
-    }
-
-    TRACE
-    logger.info("Fetching general configuration from SPIFFS...", "main::setup");
-    if (!setGeneralConfigurationFromSpiffs()) {
-        logger.warning("Failed to load configuration from SPIFFS. Using default values.", "main::setup");
-    } else {
-        logger.info("Configuration loaded from SPIFFS", "main::setup");
-    }
-
-    led.setPurple();
-    
-    TRACE
-    logger.info("Setting up multiplexer...", "main::setup");
-    multiplexer.begin();
-    logger.info("Multiplexer setup done", "main::setup");
-    
-    TRACE
-    logger.info("Setting up ADE7953...", "main::setup");
-    if (!ade7953.begin()) {
-        logger.fatal("ADE7953 initialization failed!", "main::setup");
-    } else {
-        logger.info("ADE7953 setup done", "main::setup");
-    }
-
-    led.setBlue();
-
-    TRACE
-    logger.info("Setting up WiFi...", "main::setup");
-    customWifi.begin();
-    logger.info("WiFi setup done", "main::setup");
-
-    // TODO: if the time syncronization fails, the MQTT cannot work. In any case, we need to retry the time syncronization every X time in the loop if it fails
-    TRACE
-    logger.info("Syncing time...", "main::setup");
-    updateTimezone();
-    if (!customTime.begin()) {
-        logger.error("Time sync failed!", "main::setup");
-    } else {
-        logger.info("Time synced", "main::setup");
-    }
-    
-    TRACE
-    logger.info("Setting up server...", "main::setup");
-    customServer.begin();
-    logger.info("Server setup done", "main::setup");
-
-    TRACE
-    logger.info("Setting up Modbus TCP...", "main::setup");
-    modbusTcp.begin();
-    logger.info("Modbus TCP setup done", "main::setup");
-
-    led.setGreen();
-
-    TRACE
-    logger.info("Setup done", "main::setup");
-}
-
-void loop() {
-    TRACE
-    if (mainFlags.blockLoop) return;
-
-    TRACE
-    crashMonitor.crashCounterLoop();
-    TRACE
-    crashMonitor.firmwareTestingLoop();
-    
-    TRACE
-    customWifi.loop();
-    
-    TRACE
-    mqtt.loop();
-    
-    TRACE
-    customMqtt.loop();
-    
-    TRACE
-    ade7953.loop();
-
-    TRACE
-    if (ade7953.isLinecycFinished()) {
-    
-        led.setGreen();
-
-        // Since there is a settling time after the multiplexer is switched, 
-        // we let one cycle pass before we start reading the values
-        if (mainFlags.isfirstLinecyc) {
-            mainFlags.isfirstLinecyc = false;
-            ade7953.purgeEnergyRegister(mainFlags.currentChannel);
-        } else {
-            mainFlags.isfirstLinecyc = true;
-
-            if (mainFlags.currentChannel != -1) { // -1 indicates that no channel is active
-              TRACE
-              ade7953.readMeterValues(mainFlags.currentChannel);
-
-              TRACE
-              payloadMeter.push(
-              PayloadMeter(
-                  mainFlags.currentChannel,
-                  customTime.getUnixTimeMilliseconds(),
-                  ade7953.meterValues[mainFlags.currentChannel].activePower,
-                  ade7953.meterValues[mainFlags.currentChannel].powerFactor
-                  )
-              );
-              
-              printMeterValues(ade7953.meterValues[mainFlags.currentChannel], ade7953.channelData[mainFlags.currentChannel].label.c_str());
-            }
-
-            TRACE
-            mainFlags.currentChannel = ade7953.findNextActiveChannel(mainFlags.currentChannel);
-            multiplexer.setChannel(max(mainFlags.currentChannel-1, 0));
-        }
-
-        // We always read the first channel as it is in a separate channel and is not impacted by the switching of the multiplexer
-        TRACE
-        ade7953.readMeterValues(0);
-        payloadMeter.push(
-            PayloadMeter(
-                0,
-                customTime.getUnixTimeMilliseconds(),
-                ade7953.meterValues[0].activePower,
-                ade7953.meterValues[0].powerFactor
-            )
-            );
-        printMeterValues(ade7953.meterValues[0], ade7953.channelData[0].label.c_str());
-    }
-
-    TRACE
-    if(ESP.getFreeHeap() < MINIMUM_FREE_HEAP_SIZE){
-        printDeviceStatus();
-        setRestartEsp32("main::loop", "Heap memory has degraded below safe minimum");
-    }
-
-    // If memory is below a certain level, clear the log
-    TRACE
-    if (SPIFFS.totalBytes() - SPIFFS.usedBytes() < MINIMUM_FREE_SPIFFS_SIZE) {
-        printDeviceStatus();
-        logger.clearLog();
-        logger.warning("Log cleared due to low memory", "main::loop");
-    }
-
-    TRACE
-    checkIfRestartEsp32Required();
-    
-    TRACE
-    led.setOff();
+void loop()
+{
+  // Oh yes, it took a incredible amount of time but finally we have a loop in which "nothing" happens
+  // This is because all of the tasks are running in their own FreeRTOS tasks
+  // Much better than the old way of having everything in the main loop blocking
+  // This will never run, but we leave the delay for safety
+  vTaskDelay(portMAX_DELAY);
 }

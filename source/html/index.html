@@ -9,11 +9,12 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
-
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    
+
+    <script src="/js/api-client.js"></script>
+
     <title>EnergyMe</title>
-    
+    <!-- TODO: add a popup if the user is still using the default password (use the endpoints /api/v1/auth/... in the swagger.yaml) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         .header {
@@ -53,31 +54,402 @@
             padding: 10px;
             text-align: center;
         }
+        
+        .channel-box.main-channel {
+            border: 3px solid #007bff;
+            background-color: #f8f9ff;
+        }
+        
+        .channel-box.other-channel {
+            border: 2px solid #ffc107;
+            background-color: #fffdf0;
+        }
 
         .channel-label {
             font-size: 24px;
             margin-bottom: 5px;
             font-weight: bold;
-        }
-
-        .channel-value {
+        }        .channel-value {
             font-style: italic;
             color: #808080;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 0 10px;
+        }
+        
+        .chart-header h3 {
+            margin: 0;
+            font-size: 24px;
+            color: #333;
+        }
+        
+        .chart-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
+        .view-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .date-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .chart-total {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .chart-total .total-value {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .tooltip-container {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .tooltip-container .tooltip-text {
+            visibility: hidden;
+            width: 280px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 12px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -140px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .tooltip-container .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+        
+        .tooltip-container:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        .info-icon {
+            color: #666;
+            font-size: 14px;
+            margin-left: 4px;
+            cursor: help;
+        }
+        
+        .date-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .view-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .view-toggle {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .view-toggle.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        
+        .view-toggle:hover {
+            background: #e9ecef;
+        }
+        
+        .view-toggle.active:hover {
+            background: #0056b3;
+        }
+        
+        .nav-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+        
+        .nav-button:hover {
+            background: #0056b3;
+        }
+        
+        .nav-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        #date-picker {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        #consumption-chart {
+            position: relative;
+            width: 100%;
+            height: 400px; /* Fixed height for desktop */
+        }
+        
+        #consumption-chart canvas {
+            width: 100% !important;
+            height: 100% !important; /* Force canvas to fill container */
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .header {
+                font-size: 64px;
+                margin-bottom: 8px;
+            }
+            
+            .subheader {
+                font-size: 24px;
+                margin-bottom: 15px;
+            }
+            
+            .voltage-box {
+                font-size: 18px;
+                margin-bottom: 15px;
+            }
+            
+            .channels-box {
+                justify-content: center;
+            }
+            
+            .channel-box {
+                width: 45%;
+                margin-bottom: 15px;
+                padding: 8px;
+                min-width: 140px;
+            }
+            
+            .channel-label {
+                font-size: 18px;
+                margin-bottom: 4px;
+            }
+            
+            .chart-header {
+                flex-direction: column;
+                gap: 15px;
+                margin-bottom: 10px;
+                padding: 0 5px;
+                align-items: stretch;
+            }
+            
+            .chart-header h3 {
+                font-size: 20px;
+                text-align: center;
+                margin-bottom: 0;
+            }
+            
+            .chart-controls {
+                align-items: center;
+                gap: 15px;
+            }
+            
+            .view-selector {
+                justify-content: center;
+                gap: 8px;
+                order: 1;
+            }
+            
+            .date-selector {
+                justify-content: center;
+                gap: 8px;
+                order: 2;
+            }
+            
+            /* Chart container responsive sizing */
+            #consumption-chart {
+                height: 300px; /* Fixed height for mobile */
+            }
+            
+            .view-toggle {
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            
+            .nav-button {
+                padding: 6px 10px;
+                font-size: 14px;
+            }
+            
+            #date-picker,
+            #month-picker {
+                padding: 6px;
+                font-size: 13px;
+                width: 150px;
+            }
+            
+            #download-csv {
+                top: 5px;
+                right: 5px;
+                font-size: 12px;
+                padding: 4px;
+            }
+            
+            .chart-total {
+                text-align: center;
+                font-size: 14px;
+            }
+            
+            #pie-chart-canvas,
+            #total-pie-chart-canvas {
+                max-height: 300px !important;
+            }
+            
+            .tooltip-container .tooltip-text {
+                width: 200px;
+                margin-left: -100px;
+                font-size: 11px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header {
+                font-size: 48px;
+                margin-bottom: 5px;
+            }
+            
+            .subheader {
+                font-size: 20px;
+                margin-bottom: 12px;
+            }
+            
+            .voltage-box {
+                font-size: 16px;
+                margin-bottom: 12px;
+            }
+            
+            .channel-box {
+                width: 90%;
+                margin-bottom: 12px;
+                padding: 6px;
+                min-width: auto;
+            }
+            
+            .channel-label {
+                font-size: 16px;
+            }
+            
+            .chart-header h3 {
+                font-size: 18px;
+            }
+            
+            .chart-total {
+                font-size: 13px;
+            }
+            
+            .view-toggle {
+                padding: 5px 10px;
+                font-size: 12px;
+            }
+            
+            .nav-button {
+                padding: 5px 8px;
+                font-size: 13px;
+            }
+            
+            #date-picker,
+            #month-picker {
+                width: 130px;
+                font-size: 12px;
+            }
+            
+            /* Chart container for very small screens */
+            #consumption-chart {
+                height: 250px; /* Smaller height for small screens */
+            }
+            
+            .view-toggle {
+                padding: 5px 10px;
+                font-size: 12px;
+            }
+            
+            .nav-button {
+                padding: 5px 8px;
+                font-size: 13px;
+            }
+            
+            #date-picker,
+            #month-picker {
+                width: 130px;
+                font-size: 12px;
+                padding: 5px;
+            }
+            
+            .chart-total {
+                font-size: 13px;
+            }
+            
+            #pie-chart-canvas,
+            #total-pie-chart-canvas {
+                max-height: 250px !important;
+            }
+            
+            .tooltip-container .tooltip-text {
+                width: 160px;
+                margin-left: -80px;
+                font-size: 10px;
+            }
         }
     </style>
 </head>
 
-<body>
-
-    <div class="header">EnergyMe</div>
+<body>    <div class="header">EnergyMe</div>
     <div class="subheader">Home</div>
-
+    
     <div class="buttonNavigation-container">
-        <a class="buttonNavigation" type="inner" href="/info">Info</a>
-        <a class="buttonNavigation" type="inner" href="/configuration">Configuration</a>
-        <a class="buttonNavigation" type="inner" href="/update"> Update</a>
-        <a class="buttonNavigationExternal" type="inner" href="/swagger-ui" target="_blank">API Docs</a>
-        </a>
+        <a class="buttonNavigation" type="inner" href="/info">💡 Info</a>
+        <a class="buttonNavigation" type="inner" href="/configuration">⚙️ Configuration</a>
+        <a class="buttonNavigation" type="inner" href="/update">🚀 Update</a>
+        <a class="buttonNavigationExternal" type="inner" href="/swagger-ui" target="_blank">📚 API Docs</a>
     </div>
 
     <div class="section-box">
@@ -86,9 +458,24 @@
     </div>
 
     <div class="section-box">
+        <div class="chart-header">
+            <h3>Energy Consumption</h3>
+            <div class="chart-controls">
+                <div class="view-selector">
+                    <button id="daily-view" class="view-toggle active">Daily View</button>
+                    <button id="monthly-view" class="view-toggle">Monthly View</button>
+                </div>
+                <div class="date-selector">
+                    <input type="date" id="date-picker" />
+                    <input type="month" id="month-picker" style="display: none;" />
+                    <button id="prev-period" class="nav-button">◀</button>
+                    <button id="next-period" class="nav-button">▶</button>
+                </div>
+            </div>
+        </div>
         <div id="consumption-chart" style="position: relative;">
             <canvas id="consumption-chart-canvas"></canvas>
-            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;"> <!-- FIXME: the text is not properly displayed (cut at the box border and "below")-->
                 <i class="fas fa-download"></i>
                 <span class="tooltiptext">Download as CSV</span>
             </button>
@@ -96,430 +483,1040 @@
     </div>
 
     <div class="section-box">
+        <div class="chart-header">
+            <h3 id="pie-chart-title">Daily Energy Distribution</h3>
+        </div>
+        <div class="chart-total" id="pie-chart-total">
+            Total: <span class="total-value" id="pie-chart-total-value">0.0 kWh</span>
+        </div>
         <div id="pie-chart">
             <canvas id="pie-chart-canvas"></canvas>
         </div>
     </div>
 
+    <div class="section-box">
+        <div class="chart-header">
+            <h3>Total Energy Distribution (Since Installation)</h3>
+        </div>
+        <div class="chart-total" id="total-pie-chart-total">
+            Lifetime Total: <span class="total-value" id="total-pie-chart-total-value">0.0 kWh</span>
+        </div>
+        <div id="total-pie-chart">
+            <canvas id="total-pie-chart-canvas"></canvas>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 </body>
 
 <script>
     var colors = [
-        'rgba(0,123,255,0.5)', 'rgba(255,0,0,0.5)', 'rgba(0,255,0,0.5)', 'rgba(255,255,0,0.5)', 'rgba(0,255,255,0.5)',
-        'rgba(123,0,255,0.5)', 'rgba(255,0,123,0.5)', 'rgba(0,255,123,0.5)', 'rgba(255,255,123,0.5)', 'rgba(123,255,0,0.5)',
-        'rgba(0,123,0,0.5)', 'rgba(123,0,0,0.5)', 'rgba(0,0,123,0.5)', 'rgba(123,123,123,0.5)', 'rgba(255,255,255,0.5)',
-        'rgba(0,0,255,0.5)', 'rgba(255,0,255,0.5)', 'rgba(255,123,0,0.5)'
+        'rgba(0,123,255,0.8)', 'rgba(255,0,0,0.8)', 'rgba(0,255,0,0.8)', 'rgba(255,255,0,0.8)', 'rgba(0,255,255,0.8)',
+        'rgba(123,0,255,0.8)', 'rgba(255,0,123,0.8)', 'rgba(0,255,123,0.8)', 'rgba(255,255,123,0.8)', 'rgba(123,255,0,0.8)',
+        'rgba(0,123,0,0.8)', 'rgba(123,0,0,0.8)', 'rgba(0,0,123,0.8)', 'rgba(123,123,123,0.8)', 'rgba(255,123,255,0.8)',
+        'rgba(0,0,255,0.8)', 'rgba(255,0,255,0.8)', 'rgba(255,123,0,0.8)'
     ];
 
-    var dailyEnergy = {};
     var channelData = {};
     var meterData = {};
+    var availableDates = [];
+    var availableMonths = [];
+    var currentDate = null;
+    var currentMonth = null;
+    var currentView = 'daily'; // 'daily' or 'monthly'
+    var consumptionChart = null;
+    var pieChart = null;
+    var totalPieChart = null;
+    var meterDataUpdateInProgress = false;
 
-    function getDailyEnergy() {
-        var xhttp = new XMLHttpRequest();
-
-        xhttp.onreadystatechange = function () {
-            if (this.readyState == 4 && this.status == 200) {
-                dailyEnergy = JSON.parse(this.responseText);
+    // Function to decompress gzip data
+    async function decompressGzipFile(filename) {
+        try {
+            // Get the file as binary data
+            const response = await energyApi.apiCall(`files/${encodeURIComponent(filename)}`, { method: 'GET' });
+            if (!response.ok) {
+                throw new Error(`Failed to fetch ${filename}: ${response.status}`);
             }
-        };
-        xhttp.open("GET", "/daily-energy", true);
-        xhttp.send();
-    }
-
-    function getChannelData() {
-        var xhttp = new XMLHttpRequest();
-
-        xhttp.onreadystatechange = function () {
-            if (this.readyState == 4 && this.status == 200) {
-                channelData = JSON.parse(this.responseText);
-            }
-        };
-        xhttp.open("GET", "/rest/get-channel", false);
-        xhttp.send();
-    }
-
-    function getMeterData() {
-        var xhttp = new XMLHttpRequest();
-
-        xhttp.onreadystatechange = function () {
-            if (this.readyState == 4 && this.status == 200) {
-                meterData = JSON.parse(this.responseText);
-            }
-        };
-        xhttp.open("GET", "/rest/meter", false);
-        xhttp.send();
-    }
-
-    function updateMeterData() {
-        document.getElementById("voltage").innerHTML = meterData[0].data.voltage.toFixed(1) + ' V';
-
-        var powerDataHtml = '';
-        var channelCount = 0;
-        var totalPower = 0;
-        for (var channel in meterData) {
-            var label = meterData[channel].label;
-            var activePower = meterData[channel].data.activePower.toFixed(0);
-
-            powerDataHtml += '<div class="channel-box">';
-            powerDataHtml += '<div class="channel-label">' + label + '</div>';
-            powerDataHtml += '<div class="channel-value">' + activePower + ' W</div>';
-            powerDataHtml += '</div>';
-
-            if (channelCount > 0) {
-                totalPower += parseFloat(activePower);
-            }
-            channelCount++;
+            
+            // Get the response as array buffer
+            const gzipData = await response.arrayBuffer();
+            
+            // Decompress using pako
+            const decompressed = pako.inflate(new Uint8Array(gzipData), { to: 'string' });
+            
+            return decompressed;
+        } catch (error) {
+            console.error(`Error decompressing ${filename}:`, error);
+            throw error;
         }
-
-        document.getElementById("channels").innerHTML = powerDataHtml;
     }
 
-    function parseDailyEnergy() {
-        var dailyActiveEnergy = {};
-
-        for (var date in dailyEnergy) {
-            for (var channel in dailyEnergy[date]) {
-                if (!dailyActiveEnergy[date]) {
-                    dailyActiveEnergy[date] = {};
+    // Function to load CSV data (compressed or uncompressed)
+    async function loadCsvData(date) {
+        try {
+            // First try to get file list to determine available format
+            const fileList = await energyApi.getFileList();
+            const csvFilename = `energy/${date}.csv`;
+            const gzFilename = `energy/${date}.csv.gz`;
+            
+            if (fileList[csvFilename] !== undefined) {
+                // Plain CSV file exists - load directly
+                const response = await energyApi.apiCall(`files/${encodeURIComponent(csvFilename)}`, { method: 'GET' });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch ${csvFilename}: ${response.status}`);
                 }
-
-                dailyActiveEnergy[date][channel] = dailyEnergy[date][channel].activeEnergyImported / 1000;
+                return await response.text();
+            } else if (fileList[gzFilename] !== undefined) {
+                // Compressed file exists - decompress
+                return await decompressGzipFile(gzFilename);
+            } else {
+                throw new Error(`No CSV file found for date ${date}`);
             }
+        } catch (error) {
+            console.error(`Error loading CSV data for ${date}:`, error);
+            throw error;
         }
-
-        var firstDay = Object.keys(dailyActiveEnergy)[0];
-        var lastDay = Object.keys(dailyActiveEnergy)[Object.keys(dailyActiveEnergy).length - 1];
-
-        var listMissingDays = [];
-        var currentDate = new Date(firstDay);
-        var lastDate = new Date(lastDay);
-
-        while (currentDate < lastDate) {
-            currentDate.setDate(currentDate.getDate() + 1);
-            var date = currentDate.toISOString().split('T')[0];
-
-            if (!dailyActiveEnergy[date]) {
-                dailyActiveEnergy[date] = {};
-            }
-        }
-
-        var dailyActiveEnergyDifference = {};
-
-        var dates = Object.keys(dailyActiveEnergy).sort();
-        for (var i = 0; i < dates.length; i++) {
-            var date = dates[i];
-            var previousDate = dates[i - 1];
-        
-            dailyActiveEnergyDifference[date] = {};
-        
-            for (var channel in dailyActiveEnergy[date]) {
-                var currentDayEnergy = dailyActiveEnergy[date][channel];
-                var previousDayEnergy = i > 0 ? dailyActiveEnergy[previousDate][channel] || 0 : 0;
-        
-                dailyActiveEnergyDifference[date][channel] = currentDayEnergy - previousDayEnergy;
-            }
-        }
-
-        dailyActiveEnergy = addOtherDailyEnergy(dailyActiveEnergyDifference);
-        dailyActiveEnergy = renameDailyActiveEnergyDifference(dailyActiveEnergy, channelData);
-
-        return dailyActiveEnergy;
     }
 
-    function addOtherDailyEnergy(dailyActiveEnergyDifference) {
+    // Initialize page
+    async function initializePage() {
+        try {
+            // Get channel configuration and current meter data
+            [channelData, meterData] = await Promise.all([
+                energyApi.getChannelConfig(),
+                energyApi.getMeterValues()
+            ]);
 
-        for (var date in dailyActiveEnergyDifference) {
+            // Update real-time displays
+            updateMeterData();
 
-            var generalEnergy = dailyActiveEnergyDifference[date]["0"];
-            var otherEnergy = 0;
+            // Get available energy files
+            await loadAvailableDates();
 
-            for (var channel in dailyActiveEnergyDifference[date]) {
-                if (channel !== "0") {
-                    otherEnergy += dailyActiveEnergyDifference[date][channel];
-                }
+            // Set up date picker with most recent date
+            if (availableDates.length > 0) {
+                currentDate = availableDates[availableDates.length - 1];
+                currentMonth = availableMonths[availableMonths.length - 1];
+                document.getElementById('date-picker').value = currentDate;
+                document.getElementById('month-picker').value = currentMonth;
+                updateNavigationButtons();
+                await loadAndDisplayCharts();
+                await updateTotalPieChart();
+            } else {
+                showNoDataMessage();
             }
 
-            dailyActiveEnergyDifference[date]['Other'] = generalEnergy - otherEnergy;
-            delete dailyActiveEnergyDifference[date]["0"];
+            // Set up event listeners
+            setupEventListeners();
+
+        } catch (error) {
+            console.error('Error initializing page:', error);
+            showErrorMessage('Failed to load energy data');
         }
-
-        return dailyActiveEnergyDifference;
-    }
-    
-    function renameDailyActiveEnergyDifference(dailyActiveEnergyDifference, channelData) {
-
-        for (var date in dailyActiveEnergyDifference) {
-
-            for (var channel in dailyActiveEnergyDifference[date]) {
-                if (channel !== "Other") {
-                    var channelIndex = parseInt(channel);
-                    var channelLabel = channelData[channelIndex].label;
-
-                    dailyActiveEnergyDifference[date][channelLabel] = dailyActiveEnergyDifference[date][channel];
-                    delete dailyActiveEnergyDifference[date][channel];
-                }
-            }
-
-            otherEnergy = dailyActiveEnergyDifference[date]['Other'];
-            delete dailyActiveEnergyDifference[date]['Other'];
-            dailyActiveEnergyDifference[date]['Other'] = otherEnergy;
-        }
-
-        return dailyActiveEnergyDifference;
     }
 
-    function getTotalActiveEnergy() {
-        var totalActiveEnergy = {};
-
-        for (var channel in meterData) {
-            totalActiveEnergy[meterData[channel].index] = meterData[channel].data.activeEnergyImported / 1000;
+    async function loadAvailableDates() {
+        try {
+            const fileList = await energyApi.getFileList();
+            availableDates = Object.keys(fileList)
+                .filter(filename => filename.startsWith('energy/') && (filename.endsWith('.csv.gz') || filename.endsWith('.csv')))
+                .map(filename => filename.replace('energy/', '').replace('.csv.gz', '').replace('.csv', ''))
+                .sort();
+            
+            // Extract unique months
+            availableMonths = [...new Set(availableDates.map(date => date.substring(0, 7)))].sort();
+        } catch (error) {
+            console.error('Error loading available dates:', error);
+            availableDates = [];
+            availableMonths = [];
         }
-
-        totalActiveEnergy = addTotalOtherEnergy(totalActiveEnergy);
-        totalActiveEnergy = renameTotalActiveEnergy(totalActiveEnergy, channelData);
-
-        return totalActiveEnergy;
     }
 
-    function addTotalOtherEnergy(totalActiveEnergy) {
-        var totalGeneralEnergy = totalActiveEnergy["0"];
-        var totalOtherEnergy = 0;
-
-        for (var channel in totalActiveEnergy) {
-            if (channel !== "0") {
-                totalOtherEnergy += totalActiveEnergy[channel];
-            }
-        }
-
-        totalActiveEnergy['Other'] = totalGeneralEnergy - totalOtherEnergy;
-        delete totalActiveEnergy["0"];
-
-        return totalActiveEnergy;
-    }
-
-    function renameTotalActiveEnergy(totalActiveEnergy, channelData) {
-
-        for (var channel in totalActiveEnergy) {
-            if (channel !== "Other") {
-                var channelIndex = parseInt(channel);
-                var channelLabel = channelData[channelIndex].label;
-
-                totalActiveEnergy[channelLabel] = totalActiveEnergy[channel];
-                delete totalActiveEnergy[channel];
-            }
-
-            otherEnergy = totalActiveEnergy['Other'];
-            delete totalActiveEnergy['Other'];
-            totalActiveEnergy['Other'] = otherEnergy;
-        }
-
-        return totalActiveEnergy;
-    }
-    
-    function getActiveChannels() {
-        // Get channels that have non-zero power consumption
-        const activeChannels = [];
-        for (var channel in meterData) {
-            if (meterData[channel].data.activePower > 0) {
-                activeChannels.push(meterData[channel].label);
-            }
-        }
-        // Always include 'Other' channel
-        if (!activeChannels.includes('Other')) {
-            activeChannels.push('Other');
-        }
-        return activeChannels;
-    }
-
-    function plotConsumptionChart(consumptionData) {
-        var labels = Object.keys(consumptionData);
+    function setupEventListeners() {
+        // View toggle buttons
+        document.getElementById('daily-view').addEventListener('click', () => {
+            switchView('daily');
+        });
         
-        // Get active channels
-        const activeChannels = getActiveChannels();
+        document.getElementById('monthly-view').addEventListener('click', () => {
+            switchView('monthly');
+        });
         
-        var datasets = [];
-        var channels = Object.keys(consumptionData[labels[0]])
-            .filter(channel => activeChannels.includes(channel));
+        // Date picker change
+        document.getElementById('date-picker').addEventListener('change', async (e) => {
+            currentDate = e.target.value;
+            updateNavigationButtons();
+            await loadAndDisplayCharts();
+        });
         
-        channels.forEach(function (channel, i) {
-            var data = labels.map(function (label) {
-                var value = consumptionData[label][channel];
-                if (isNaN(value)) {
-                    value = 0;
-                }
-                if (value >= 1000) {
-                    return value.toFixed(0);
-                } else if (value >= 100) {
-                    return value.toFixed(1);
-                } else if (value >= 10) {
-                    return value.toFixed(2);
-                } else {
-                    return value.toFixed(3);
-                }
-            });
-        
-            datasets.push({
-                label: channel,
-                data: data,
-                backgroundColor: colors[i % colors.length],
-                borderColor: colors[i % colors.length],
-                borderWidth: 1
-            });
+        // Month picker change
+        document.getElementById('month-picker').addEventListener('change', async (e) => {
+            currentMonth = e.target.value;
+            updateNavigationButtons();
+            await loadAndDisplayCharts();
         });
 
-        var ctx = document.getElementById('consumption-chart-canvas').getContext('2d');
-        new Chart(ctx, {
+        // Navigation buttons
+        document.getElementById('prev-period').addEventListener('click', async () => {
+            if (currentView === 'daily') {
+                const currentIndex = availableDates.indexOf(currentDate);
+                if (currentIndex > 0) {
+                    currentDate = availableDates[currentIndex - 1];
+                    document.getElementById('date-picker').value = currentDate;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            } else {
+                const currentIndex = availableMonths.indexOf(currentMonth);
+                if (currentIndex > 0) {
+                    currentMonth = availableMonths[currentIndex - 1];
+                    document.getElementById('month-picker').value = currentMonth;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            }
+        });
+
+        document.getElementById('next-period').addEventListener('click', async () => {
+            if (currentView === 'daily') {
+                const currentIndex = availableDates.indexOf(currentDate);
+                if (currentIndex < availableDates.length - 1) {
+                    currentDate = availableDates[currentIndex + 1];
+                    document.getElementById('date-picker').value = currentDate;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            } else {
+                const currentIndex = availableMonths.indexOf(currentMonth);
+                if (currentIndex < availableMonths.length - 1) {
+                    currentMonth = availableMonths[currentIndex + 1];
+                    document.getElementById('month-picker').value = currentMonth;
+                    updateNavigationButtons();
+                    await loadAndDisplayCharts();
+                }
+            }
+        });
+    }
+    
+    function switchView(view) {
+        currentView = view;
+        
+        // Update button states
+        document.getElementById('daily-view').classList.toggle('active', view === 'daily');
+        document.getElementById('monthly-view').classList.toggle('active', view === 'monthly');
+        
+        // Show/hide appropriate date pickers
+        document.getElementById('date-picker').style.display = view === 'daily' ? 'block' : 'none';
+        document.getElementById('month-picker').style.display = view === 'monthly' ? 'block' : 'none';
+        
+        // Update chart title
+        const title = view === 'daily' ? 'Daily Energy Distribution' : 'Monthly Energy Distribution';
+        document.getElementById('pie-chart-title').textContent = title;
+        
+        updateNavigationButtons();
+        loadAndDisplayCharts();
+    }
+
+    function updateNavigationButtons() {
+        if (currentView === 'daily') {
+            const currentIndex = availableDates.indexOf(currentDate);
+            document.getElementById('prev-period').disabled = currentIndex <= 0;
+            document.getElementById('next-period').disabled = currentIndex >= availableDates.length - 1;
+        } else {
+            const currentIndex = availableMonths.indexOf(currentMonth);
+            document.getElementById('prev-period').disabled = currentIndex <= 0;
+            document.getElementById('next-period').disabled = currentIndex >= availableMonths.length - 1;
+        }
+    }
+
+    async function loadAndDisplayCharts() {
+        if (currentView === 'daily' && !currentDate) return;
+        if (currentView === 'monthly' && !currentMonth) return;
+
+        try {
+            showLoadingMessage();
+            
+            if (currentView === 'daily') {
+                await loadDailyCharts();
+            } else {
+                await loadMonthlyCharts();
+            }
+            
+        } catch (error) {
+            console.error('Error loading charts:', error);
+            const period = currentView === 'daily' ? currentDate : currentMonth;
+            showErrorMessage(`Failed to load energy data for ${period}`);
+        }
+    }
+    
+    async function loadDailyCharts() {
+        // Get required UTC dates for the selected local date
+        const requiredDates = getRequiredDatesForLocal(currentDate);
+        
+        let allEnergyData = [];
+        
+        // Load data from all required UTC dates
+        for (const utcDate of requiredDates) {
+            if (availableDates.includes(utcDate)) {
+                try {
+                    const csvData = await loadCsvData(utcDate);
+                    const energyData = parseCsvEnergyData(csvData);
+                    allEnergyData = allEnergyData.concat(energyData);
+                } catch (error) {
+                    console.warn(`Failed to load data for UTC date ${utcDate}:`, error);
+                }
+            }
+        }
+        
+        if (allEnergyData.length === 0) {
+            throw new Error('No data available for selected date');
+        }
+        
+        // Filter data to include the full local day plus first hour of next day
+        // We need the next day's first reading to calculate consumption for hour 23:00
+        const localDayStart = new Date(currentDate + 'T00:00:00');
+        const nextDayStart = new Date(currentDate + 'T00:00:00');
+        nextDayStart.setDate(nextDayStart.getDate() + 1);
+        nextDayStart.setHours(1, 0, 0, 0); // Include up to 01:00 next day
+        
+        const filteredData = allEnergyData.filter(entry => {
+            // Parse the UTC timestamp from CSV and convert to local time for comparison
+            const entryLocalDate = new Date(entry.timestamp);
+            return entryLocalDate >= localDayStart && entryLocalDate < nextDayStart;
+        });
+        
+        // Calculate hourly consumption and total consumption
+        const hourlyConsumption = calculateHourlyConsumption(filteredData);
+        const totalConsumption = calculateTotalConsumption(filteredData);
+        
+        // Restore chart canvases before updating
+        restoreChartCanvases();
+        
+        // Update charts
+        updateConsumptionChart(hourlyConsumption, 'daily');
+        updatePieChart(totalConsumption);
+        
+        // Set up CSV download
+        setupCsvDownload(hourlyConsumption, 'daily');
+    }
+    
+    async function loadMonthlyCharts() {
+        // Get all dates for the selected month
+        const monthDates = availableDates.filter(date => date.startsWith(currentMonth));
+        
+        if (monthDates.length === 0) {
+            throw new Error('No data available for selected month');
+        }
+        
+        // Load data for all days in the month
+        const monthlyData = {};
+        const dailyConsumptions = {};
+        
+        for (const date of monthDates) {
+            try {
+                const csvData = await loadCsvData(date);
+                const energyData = parseCsvEnergyData(csvData);
+                const dailyConsumption = calculateTotalConsumption(energyData);
+                
+                const day = date.substring(8, 10); // Extract day from YYYY-MM-DD
+                dailyConsumptions[day] = dailyConsumption;
+                
+                // Add to monthly totals
+                Object.keys(dailyConsumption).forEach(channel => {
+                    if (!monthlyData[channel]) monthlyData[channel] = 0;
+                    monthlyData[channel] += dailyConsumption[channel];
+                });
+            } catch (error) {
+                console.warn(`Failed to load data for ${date}:`, error);
+            }
+        }
+        
+        // Restore chart canvases before updating
+        restoreChartCanvases();
+        
+        // Update charts
+        updateConsumptionChart(dailyConsumptions, 'monthly');
+        updatePieChart(monthlyData);
+        
+        // Set up CSV download
+        setupCsvDownload(dailyConsumptions, 'monthly');
+    }
+
+    function parseCsvEnergyData(csvText) {
+        const lines = csvText.trim().split('\n');
+        const data = [];
+        
+        // Skip header line
+        for (let i = 1; i < lines.length; i++) {
+            const [timestamp, channel, activeImported, activeExported] = lines[i].split(',');
+            data.push({
+                timestamp: timestamp,
+                channel: parseInt(channel),
+                activeImported: parseFloat(activeImported),
+                activeExported: parseFloat(activeExported)
+            });
+        }
+        
+        return data;
+    }
+
+    function calculateHourlyConsumption(energyData) {
+        // Sort all data chronologically first
+        const sortedData = energyData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        // Group data by channel and create chronological sequences
+        const channelSequences = {};
+        sortedData.forEach(entry => {
+            if (!channelSequences[entry.channel]) {
+                channelSequences[entry.channel] = [];
+            }
+            channelSequences[entry.channel].push({
+                timestamp: entry.timestamp,
+                energy: entry.activeImported,
+                localHour: new Date(entry.timestamp).getHours().toString().padStart(2, '0')
+            });
+        });
+        
+        // Calculate hourly consumption by finding differences between consecutive readings
+        const consumption = {};
+        
+        Object.keys(channelSequences).forEach(channel => {
+            const sequence = channelSequences[channel];
+            
+            for (let i = 1; i < sequence.length; i++) {
+                const current = sequence[i];
+                const previous = sequence[i - 1];
+                
+                const hourlyConsumption = Math.max(0, (current.energy - previous.energy) / 1000); // Convert Wh to kWh
+                
+                // Assign consumption to the hour when it ended (current hour)
+                if (!consumption[current.localHour]) {
+                    consumption[current.localHour] = {};
+                }
+                consumption[current.localHour][channel] = hourlyConsumption;
+            }
+        });
+        
+        // Add "Other" consumption (channel 0 minus sum of all other channels)
+        // Only process hours 00-23 of the current day
+        Object.keys(consumption).forEach(hour => {
+            // Skip hours outside the current day (e.g., hour "00" of next day)
+            const hourNum = parseInt(hour);
+            if (hourNum < 0 || hourNum > 23) return;
+            
+            const totalConsumption = consumption[hour][0] || 0;
+            let trackedConsumption = 0;
+            
+            Object.keys(consumption[hour]).forEach(channel => {
+                if (channel !== '0') {
+                    trackedConsumption += consumption[hour][channel];
+                }
+            });
+            
+            consumption[hour]['Other'] = Math.max(0, totalConsumption - trackedConsumption);
+            delete consumption[hour]['0']; // Remove total channel from display
+        });
+        
+        // Filter out any hours outside 00-23 range before returning
+        const filteredConsumption = {};
+        Object.keys(consumption).forEach(hour => {
+            const hourNum = parseInt(hour);
+            if (hourNum >= 0 && hourNum <= 23) {
+                filteredConsumption[hour] = consumption[hour];
+            }
+        });
+        
+        return filteredConsumption;
+    }
+
+    function calculateTotalConsumption(energyData) {
+        const latestData = {};
+        const firstData = {};
+        
+        // Find first and last reading for each channel
+        energyData.forEach(entry => {
+            if (!firstData[entry.channel]) {
+                firstData[entry.channel] = entry.activeImported;
+            }
+            latestData[entry.channel] = entry.activeImported;
+        });
+        
+        // Calculate total consumption for the day
+        const totalConsumption = {};
+        Object.keys(latestData).forEach(channel => {
+            const dailyConsumption = (latestData[channel] - (firstData[channel] || 0)) / 1000; // Convert to kWh
+            if (dailyConsumption > 0) {
+                totalConsumption[channel] = dailyConsumption;
+            }
+        });
+        
+        // Add "Other" consumption
+        if (totalConsumption[0]) {
+            const totalHouseConsumption = totalConsumption[0];
+            let trackedConsumption = 0;
+            
+            Object.keys(totalConsumption).forEach(channel => {
+                if (channel !== '0') {
+                    trackedConsumption += totalConsumption[channel];
+                }
+            });
+            
+            totalConsumption['Other'] = Math.max(0, totalHouseConsumption - trackedConsumption);
+            delete totalConsumption['0']; // Remove total channel
+        }
+        
+        return totalConsumption;
+    }
+
+    function updateConsumptionChart(consumptionData, viewType) {
+        const periods = Object.keys(consumptionData).sort();
+        
+        // Get all channels except 'Other' first, then add 'Other' at the end
+        const allChannels = new Set();
+        periods.forEach(period => {
+            Object.keys(consumptionData[period]).forEach(channel => {
+                if (channel !== 'Other') allChannels.add(channel);
+            });
+        });
+        const channels = [...allChannels].sort((a, b) => parseInt(a) - parseInt(b));
+        if (periods.some(period => consumptionData[period]['Other'])) {
+            channels.push('Other');
+        }
+        
+        // Create datasets
+        const datasets = channels.map((channel) => {
+            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
+            const data = periods.map(period => {
+                const value = consumptionData[period][channel] || 0;
+                return value.toFixed(3);
+            });
+            
+            const color = getChannelColor(channel);
+            
+            return {
+                label: label,
+                data: data,
+                backgroundColor: color,
+                borderColor: color.replace('0.8', '1'),
+                borderWidth: 1
+            };
+        });
+        
+        // Destroy existing chart
+        if (consumptionChart) {
+            consumptionChart.destroy();
+        }
+        
+        // Make sure canvas exists
+        const canvasElement = document.getElementById('consumption-chart-canvas');
+        if (!canvasElement) {
+            console.error('Canvas element not found');
+            return;
+        }
+        
+        // Format labels based on view type
+        const labels = viewType === 'daily' 
+            ? periods.map(hour => `${hour}:00`)
+            : periods.map(day => day);
+        
+        // Create new chart
+        const ctx = canvasElement.getContext('2d');
+        const isMobile = window.innerWidth <= 768;
+        const isSmallMobile = window.innerWidth <= 480;
+        
+        consumptionChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,
                 datasets: datasets
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: false, // Allow container to control height
                 scales: {
                     x: {
-                        stacked: true
+                        stacked: true,
+                        title: {
+                            display: true,
+                            text: viewType === 'daily' ? 'Hour' : 'Day'
+                        },
+                        ticks: {
+                            font: {
+                                size: isMobile ? 10 : 12
+                            }
+                        }
                     },
                     y: {
                         stacked: true,
                         title: {
                             display: true,
-                            text: 'kWh'
+                            text: 'Energy (kWh)'
+                        },
+                        ticks: {
+                            font: {
+                                size: isMobile ? 10 : 12
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: isMobile ? 10 : 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                }
+            }
+        });
+    }
+
+    function updatePieChart(totalConsumption) {
+        const channels = Object.keys(totalConsumption);
+        const values = Object.values(totalConsumption);
+        const total = values.reduce((sum, value) => sum + value, 0);
+        
+        // Update the total display
+        document.getElementById('pie-chart-total-value').textContent = `${total.toFixed(1)} kWh`;
+        
+        if (total === 0) {
+            showNoPieChartData();
+            return;
+        }
+        
+        // Create labels with percentages and consistent colors
+        const labels = channels.map((channel, i) => {
+            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
+            const percentage = ((values[i] / total) * 100).toFixed(1);
+            return `${label} (${percentage}%)`;
+        });
+        
+        const backgroundColors = channels.map(channel => getChannelColor(channel));
+        
+        // Destroy existing chart
+        if (pieChart) {
+            pieChart.destroy();
+        }
+        
+        // Make sure canvas exists
+        const canvasElement = document.getElementById('pie-chart-canvas');
+        if (!canvasElement) {
+            console.error('Pie chart canvas element not found');
+            return;
+        }
+        
+        // Create new chart
+        const ctx = canvasElement.getContext('2d');
+        pieChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: backgroundColors,
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = channels[context.dataIndex];
+                                const channelLabel = label === 'Other' ? 'Other (Untracked)' : getChannelLabel(label);
+                                const value = context.parsed.toFixed(2);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return `${channelLabel}: ${value} kWh (${percentage}%)`;
+                            },
+                            afterLabel: function(context) {
+                                const label = channels[context.dataIndex];
+                                if (label === 'Other') {
+                                    return 'Total consumption minus monitored channels';
+                                }
+                                return '';
+                            }
                         }
                     }
                 }
             }
         });
-        
-        // Update CSV download functionality
-        document.getElementById('download-csv').addEventListener('click', function () {
-            var csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "time," + channels.join(",") + "\n";
+    }
 
-            labels.forEach(function (label) {
-                var row = [label];
-                channels.forEach(function (channel) {
-                    row.push(consumptionData[label][channel]);
+    function getChannelLabel(channelIndex) {
+        if (channelIndex === 'Other') return 'Other';
+        const channel = channelData.find(ch => ch.index === parseInt(channelIndex));
+        return channel ? channel.label : `Channel ${channelIndex}`;
+    }
+
+    function getChannelColor(channelIndex) {
+        if (channelIndex === 'Other') {
+            // Always use the last color for "Other"
+            return colors[colors.length - 1];
+        }
+        
+        // Use channel index to consistently assign colors
+        const index = parseInt(channelIndex);
+        return colors[index % (colors.length - 1)]; // Reserve last color for "Other"
+    }
+
+    function getRequiredDatesForLocal(localDateString) {
+        // For a local date, determine which UTC dates we need to query
+        // This handles cases where local timezone spans multiple UTC days
+        // We also need data from the next day to calculate consumption for the last hour
+        const localDate = new Date(localDateString + 'T00:00:00');
+        const localDateEnd = new Date(localDateString + 'T23:59:59');
+        const nextDayStart = new Date(localDateString + 'T00:00:00');
+        nextDayStart.setDate(nextDayStart.getDate() + 1); // Add one day for next day's first reading
+        
+        // Convert local time to UTC to see what UTC dates we need
+        // getTimezoneOffset() returns offset in minutes (positive = west of UTC, negative = east of UTC)
+        // To convert local to UTC: add the offset (this compensates for the timezone difference)
+        const utcStart = new Date(localDate.getTime() + localDate.getTimezoneOffset() * 60000);
+        const utcEnd = new Date(localDateEnd.getTime() + localDateEnd.getTimezoneOffset() * 60000);
+        const utcNextDayStart = new Date(nextDayStart.getTime() + nextDayStart.getTimezoneOffset() * 60000);
+        
+        const requiredDates = new Set();
+        requiredDates.add(utcStart.toISOString().substring(0, 10));
+        requiredDates.add(utcEnd.toISOString().substring(0, 10));
+        requiredDates.add(utcNextDayStart.toISOString().substring(0, 10));
+        
+        return Array.from(requiredDates);
+    }
+
+    function setupCsvDownload(consumptionData, viewType) {
+        const downloadBtn = document.getElementById('download-csv');
+        downloadBtn.onclick = function() {
+            const periods = Object.keys(consumptionData).sort();
+            const channels = new Set();
+            
+            // Get all channels
+            periods.forEach(period => {
+                Object.keys(consumptionData[period]).forEach(channel => {
+                    channels.add(channel);
+                });
+            });
+            
+            const channelArray = [...channels].sort((a, b) => {
+                if (a === 'Other') return 1;
+                if (b === 'Other') return -1;
+                return parseInt(a) - parseInt(b);
+            });
+            
+            // Create CSV content
+            let csvContent = "data:text/csv;charset=utf-8,";
+            const periodLabel = viewType === 'daily' ? 'Hour' : 'Day';
+            csvContent += periodLabel + "," + channelArray.map(ch => getChannelLabel(ch)).join(",") + "\n";
+            
+            periods.forEach(period => {
+                const periodDisplay = viewType === 'daily' ? period + ":00" : period;
+                const row = [periodDisplay];
+                channelArray.forEach(channel => {
+                    row.push((consumptionData[period][channel] || 0).toFixed(3));
                 });
                 csvContent += row.join(",") + "\n";
             });
-
-            var encodedUri = encodeURI(csvContent);
-            var link = document.createElement("a");
-            var now = new Date();
-            var timestamp = now.toISOString().replace(/[:.-]/g, "_");
-            var filename = "consumption_data_" + timestamp + ".csv";
+            
+            // Download file
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            const dateStr = viewType === 'daily' ? currentDate : currentMonth;
+            const filename = `energy_consumption_${viewType}_${dateStr}.csv`;
             link.setAttribute("href", encodedUri);
             link.setAttribute("download", filename);
             document.body.appendChild(link);
-
             link.click();
             document.body.removeChild(link);
-        });
+        };
     }
-
-    function plotPieChart(consumptionData) {
-        var labels = Object.keys(consumptionData);
-        var data = Object.values(consumptionData).map(value => isNaN(value) ? 0 : value); // Replace NaN with 0
-
-        var totalConsumption = data.reduce(function (acc, value) {
-            return acc + value;
-        }, 0);
     
-        labels = labels.map(function (label, i) {
-            var percentage = ((data[i] / totalConsumption) * 100).toFixed(1);
-            return label + ' (' + percentage + '%)';
+    async function updateTotalPieChart() {
+        try {
+            // Get total energy from current meter values
+            const totalConsumption = {};
+            
+            meterData.forEach(channel => {
+                if (channel.index === 0) return; // Skip total channel
+                const totalEnergy = channel.data.activeEnergyImported / 1000; // Convert to kWh
+                if (totalEnergy > 0) {
+                    totalConsumption[channel.index] = totalEnergy;
+                }
+            });
+            
+            // Add "Other" consumption
+            const totalChannel = meterData.find(ch => ch.index === 0);
+            if (totalChannel) {
+                const totalHouseConsumption = totalChannel.data.activeEnergyImported / 1000;
+                let trackedConsumption = 0;
+                
+                Object.values(totalConsumption).forEach(consumption => {
+                    trackedConsumption += consumption;
+                });
+                
+                totalConsumption['Other'] = Math.max(0, totalHouseConsumption - trackedConsumption);
+            }
+            
+            // Update total pie chart
+            updateTotalPieChartDisplay(totalConsumption);
+            
+        } catch (error) {
+            console.error('Error updating total pie chart:', error);
+            document.getElementById("total-pie-chart").innerHTML = 
+                '<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ Failed to load total consumption data</div>';
+        }
+    }
+    
+    function updateTotalPieChartDisplay(totalConsumption) {
+        const channels = Object.keys(totalConsumption);
+        const values = Object.values(totalConsumption);
+        const total = values.reduce((sum, value) => sum + value, 0);
+        
+        // Update the total display
+        document.getElementById('total-pie-chart-total-value').textContent = `${total.toFixed(1)} kWh`;
+        
+        if (total === 0) {
+            document.getElementById("total-pie-chart").innerHTML = 
+                '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No total consumption data available.</div>';
+            return;
+        }
+        
+        // Create labels with percentages and consistent colors
+        const labels = channels.map((channel, i) => {
+            const label = channel === 'Other' ? 'Other (Untracked)' : getChannelLabel(channel);
+            const percentage = ((values[i] / total) * 100).toFixed(1);
+            return `${label} (${percentage}%)`;
         });
-    
-        var ctx = document.getElementById('pie-chart-canvas').getContext('2d');
-        new Chart(ctx, {
-            type: 'doughnut', // Use 'doughnut' type for a pie chart with a hole inside
+        
+        const backgroundColors = channels.map(channel => getChannelColor(channel));
+        
+        // Destroy existing chart
+        if (totalPieChart) {
+            totalPieChart.destroy();
+        }
+        
+        // Make sure canvas exists
+        const canvasElement = document.getElementById('total-pie-chart-canvas');
+        if (!canvasElement) {
+            console.error('Total pie chart canvas element not found');
+            return;
+        }
+        
+        // Create new chart
+        const ctx = canvasElement.getContext('2d');
+        totalPieChart = new Chart(ctx, {
+            type: 'doughnut',
             data: {
                 labels: labels,
                 datasets: [{
-                    data: data,
-                    backgroundColor: colors.slice(0, labels.length),
-                    borderWidth: 1
+                    data: values,
+                    backgroundColor: backgroundColors,
+                    borderWidth: 2,
+                    borderColor: '#fff'
                 }]
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = channels[context.dataIndex];
+                                const channelLabel = label === 'Other' ? 'Other (Untracked)' : getChannelLabel(label);
+                                const value = context.parsed.toFixed(1);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return `${channelLabel}: ${value} kWh (${percentage}%)`;
+                            },
+                            afterLabel: function(context) {
+                                const label = channels[context.dataIndex];
+                                if (label === 'Other') {
+                                    return 'Total consumption minus monitored channels';
+                                }
+                                return '';
+                            }
+                        }
+                    }
+                }
             }
         });
     }
 
-    function fetchData(endpoint) {
-        return new Promise((resolve, reject) => {
-            var xhttp = new XMLHttpRequest();
-            xhttp.onreadystatechange = function () {
-                if (this.readyState == 4) {
-                    if (this.status == 200) {
-                        resolve(JSON.parse(this.responseText));
-                    } else {
-                        console.error(`Error fetching data from ${endpoint}. Status: ${this.status}`);
-                        reject();
-                    }
+    function updateMeterData() {
+        if (!meterData || meterData.length === 0) return;
+        
+        document.getElementById("voltage").innerHTML = meterData[0].data.voltage.toFixed(1) + ' V';
+
+        let powerDataHtml = '';
+        let totalPower = 0;
+        let trackedPower = 0;
+        let shouldRebuildChannels = false;
+        
+        // Check if we need to rebuild the entire channels section
+        const existingChannels = document.getElementById("channels").children.length;
+        const expectedChannels = meterData.length + 1; // +1 for "Other"
+        
+        if (existingChannels !== expectedChannels) {
+            shouldRebuildChannels = true;
+        }
+        
+        // First, add the main channel (channel 0) with special styling
+        const mainChannel = meterData.find(ch => ch.index === 0);
+        if (mainChannel) {
+            const mainPower = mainChannel.data.activePower.toFixed(0);
+            totalPower = parseFloat(mainPower);
+            
+            if (shouldRebuildChannels) {
+                powerDataHtml += '<div class="channel-box main-channel">';
+                powerDataHtml += '<div class="channel-label">' + mainChannel.label + ' (Total)</div>';
+                powerDataHtml += '<div class="channel-value" id="main-channel-value">' + mainPower + ' W</div>';
+                powerDataHtml += '</div>';
+            } else {
+                const mainValueElement = document.getElementById("main-channel-value");
+                if (mainValueElement) {
+                    mainValueElement.textContent = mainPower + ' W';
                 }
-            };
-            xhttp.open("GET", `/${endpoint}`, true);
-            xhttp.send();
+            }
+        }
+        
+        // Then add all other channels (excluding channel 0)
+        meterData.forEach((channel, index) => {
+            if (channel.index === 0) return; // Skip total channel, already added above
+            
+            const activePower = channel.data.activePower.toFixed(0);
+            trackedPower += parseFloat(activePower);
+            
+            if (shouldRebuildChannels) {
+                powerDataHtml += '<div class="channel-box">';
+                powerDataHtml += '<div class="channel-label">' + channel.label + '</div>';
+                powerDataHtml += '<div class="channel-value" id="channel-' + channel.index + '-value">' + activePower + ' W</div>';
+                powerDataHtml += '</div>';
+            } else {
+                const channelValueElement = document.getElementById("channel-" + channel.index + "-value");
+                if (channelValueElement) {
+                    channelValueElement.textContent = activePower + ' W';
+                }
+            }
         });
+        
+        // Finally, add or update the computed "Other" channel
+        const otherPower = Math.max(0, totalPower - trackedPower);
+        if (otherPower > 0 || totalPower > 0) { // Show Other channel if there's any power or if main channel exists
+            if (shouldRebuildChannels) {
+                powerDataHtml += '<div class="channel-box other-channel">';
+                powerDataHtml += '<div class="channel-label">';
+                powerDataHtml += '<span class="tooltip-container">';
+                powerDataHtml += 'Other';
+                powerDataHtml += '<i class="fas fa-info-circle info-icon"></i>';
+                powerDataHtml += '<span class="tooltip-text">Untracked consumption: Total house consumption minus sum of all monitored channels</span>';
+                powerDataHtml += '</span>';
+                powerDataHtml += '</div>';
+                powerDataHtml += '<div class="channel-value" id="other-channel-value">' + otherPower.toFixed(0) + ' W</div>';
+                powerDataHtml += '</div>';
+            } else {
+                const otherValueElement = document.getElementById("other-channel-value");
+                if (otherValueElement) {
+                    otherValueElement.textContent = otherPower.toFixed(0) + ' W';
+                }
+            }
+        }
+
+        // Only rebuild the entire HTML if needed
+        if (shouldRebuildChannels) {
+            document.getElementById("channels").innerHTML = powerDataHtml;
+        }
     }
 
-    function plotCharts() {
-        Promise.all([fetchData('daily-energy'), fetchData('rest/get-channel'), fetchData('rest/meter')])
-            .then(data => {
-                dailyEnergy = data[0];
-                channelData = data[1];
-                meterData = data[2];
+    function showLoadingMessage() {
+        document.getElementById("consumption-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">📊 Loading energy data...</div>';
+        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 Loading energy distribution...</div>';
+    }
 
+    function showNoDataMessage() {
+        document.getElementById("consumption-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">📊 No energy data available.<br><br>Energy tracking files will appear here once data collection begins.</div>';
+        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No energy data available.</div>';
+    }
+
+    function showNoPieChartData() {
+        document.getElementById("pie-chart").innerHTML = '<div style="text-align: center; padding: 40px; font-size: 18px; color: #666;">🥧 No consumption data for this day.</div>';
+    }
+
+    function showErrorMessage(message) {
+        document.getElementById("consumption-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
+        document.getElementById("pie-chart").innerHTML = `<div style="text-align: center; padding: 40px; font-size: 18px; color: #d32f2f;">❌ ${message}</div>`;
+    }
+
+    function restoreChartCanvases() {
+        // Restore consumption chart canvas
+        const consumptionChartDiv = document.getElementById("consumption-chart");
+        consumptionChartDiv.innerHTML = `
+            <canvas id="consumption-chart-canvas"></canvas>
+            <button id="download-csv" class="tooltip" style="position: absolute; top: 2px; right: 2px;">
+                <i class="fas fa-download"></i>
+                <span class="tooltiptext">Download as CSV</span>
+            </button>
+        `;
+        
+        // Restore pie chart canvas
+        const pieChartDiv = document.getElementById("pie-chart");
+        pieChartDiv.innerHTML = '<canvas id="pie-chart-canvas"></canvas>';
+        
+        // Note: Total pie chart is not restored here since it should only load once on page initialization
+        // and represents lifetime data that doesn't need to be redrawn during chart interactions
+    }
+
+    async function fetchFirmwareUpdateInfo() {
+        try {
+            const data = await energyApi.getFirmwareUpdateInfo();
+            if (data.latest == false) {
+                document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
+            }
+        } catch (error) {
+            console.error('Error fetching firmware update info:', error);
+        }
+    }
+
+    // Initialize page when DOM is loaded
+    document.addEventListener('DOMContentLoaded', async () => {
+        await initializePage();
+        await fetchFirmwareUpdateInfo();
+        
+        // Set up real-time meter data updates
+        setInterval(async () => {
+            // Skip if previous meter data update is still in progress
+            if (meterDataUpdateInProgress) {
+                console.log('Meter data update already in progress, skipping...');
+                return;
+            }
+
+            try {
+                meterDataUpdateInProgress = true;
+                meterData = await energyApi.getMeterValues();
                 updateMeterData();
-
-                if (Object.keys(dailyEnergy).length !== 0) {
-                    dailyActiveEnergy = parseDailyEnergy();
-                    plotConsumptionChart(dailyActiveEnergy);
-                    
-                    totalActiveEnergy = getTotalActiveEnergy();
-                    plotPieChart(totalActiveEnergy);
-                } else {
-                    document.getElementById("consumption-chart").innerHTML = "No data available yet. Come back in a few hours!";
-                    document.getElementById("consumption-chart").style.textAlign = "center";
-                    document.getElementById("consumption-chart").style.fontSize = "20px";
-                    document.getElementById("consumption-chart").style.color = "#808080"; // Gray color
-
-                    // Hide the download button
-                    document.getElementById("download-csv").style.display = "none";
-
-                    document.getElementById("pie-chart").innerHTML = "No data available yet. Come back in a few hours!";
-                    document.getElementById("pie-chart").style.textAlign = "center";
-                    document.getElementById("pie-chart").style.fontSize = "20px";
-                    document.getElementById("pie-chart").style.color = "#808080"; // Gray color
-                }
-
-            })
-            .catch(error => console.error('Error:', error));
-    }
-
-    function fetchFirmwareUpdateInfo() {
-        fetch('/rest/is-latest-firmware-installed')
-            .then(response => response.json())
-            .then(data => {
-                if (data.latest == false) {
-                    document.querySelector('.buttonNavigation[href="/update"]').innerHTML += ' &#x1F514';
-                }
-            })
-            .catch(error => console.error('Error:', error));
-    }
-
-    plotCharts();
-    fetchFirmwareUpdateInfo();
-
-    setInterval(function () {
-        getMeterData();
-        updateMeterData();
-    }, 1000);
+                // Note: Total pie chart is only updated on page load, not in real-time
+                // since it represents lifetime consumption which changes slowly
+            } catch (error) {
+                console.error('Error updating meter data:', error);
+            } finally {
+                meterDataUpdateInProgress = false;
+            }
+        }, 1000);
+    });
 
 </script>
 

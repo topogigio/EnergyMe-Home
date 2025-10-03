@@ -9,7 +9,6 @@
     <link rel="stylesheet" type="text/css" href="/css/styles.css">
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
-
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Channel</title>
@@ -25,96 +24,178 @@
             width: 90%;
             box-sizing: border-box;
         }
+        
+        /* Mobile responsive styles */
+        @media screen and (max-width: 768px) {
+            .channel-columns {
+                grid-template-columns: 1fr;
+                gap: 15px;
+                padding: 0 10px;
+            }
+            
+            .channel-columns input[type="text"] {
+                width: 100%;
+                font-size: 16px; /* Prevents zoom on iOS */
+                padding: 12px;
+                margin: 8px 0;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                box-sizing: border-box;
+            }
+            
+            .channel-item {
+                width: 100%;
+                padding: 15px;
+                margin-bottom: 10px;
+                border: 1px solid #eee;
+                border-radius: 8px;
+                background-color: #f9f9f9;
+            }
+            
+            .channel-item h3 {
+                font-size: 1.2rem;
+                margin-bottom: 10px;
+            }
+            
+            .channel-item label {
+                display: block;
+                font-weight: bold;
+                margin-bottom: 5px;
+                font-size: 14px;
+            }
+            
+            .power-display {
+                font-size: 16px;
+                font-weight: bold;
+                color: #333;
+                margin: 8px 0;
+            }
+            
+            #updateStatus {
+                font-size: 14px;
+                margin: 10px 0;
+            }
+        }
+        
+        @media screen and (max-width: 480px) {
+            .channel-columns {
+                padding: 0 5px;
+                gap: 12px;
+            }
+            
+            .channel-item {
+                padding: 12px;
+            }
+            
+            .channel-item h3 {
+                font-size: 1.1rem;
+            }
+            
+            .channel-columns input[type="text"] {
+                font-size: 14px;
+                padding: 10px;
+            }
+            
+            .channel-item label {
+                font-size: 13px;
+            }
+            
+            .power-display {
+                font-size: 14px;
+            }
+            
+            #updateStatus {
+                font-size: 13px;
+            }
+        }
     </style>
 </head>
 
 <body>
     <div class="buttonNavigation-container">
-        <a class="buttonNavigation" type="outer" href="/configuration">Configuration</a>
-    </div>
-
-    <div id="channelContainer" class="section-box" style="text-align: center;">
+        <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
+    </div>    <div id="channelContainer" class="section-box" style="text-align: center;">
         <h1>Channels</h1>
-        <div style="height: 20px;"></div>
+        <div id="updateStatus" style="height: 20px; color: #666; font-style: italic;"></div>
         <div class="channel-columns"></div>
     </div>
 </body>
+<script src="/js/api-client.js"></script>
 <script>
     var channelData = {};
-    var calibrationData = {};
-    var intervals = {};
-    var lastSetChannelTime = 0;
-    const FETCH_THROTTLE = 1000;
-    var pendingUpdates = {};
-    var activeRequests = new Set();
+    var powerUpdateInterval = null;
+    const FETCH_THROTTLE = 2000; // Increased for better stability
+    var updateQueue = {};
+    var isProcessingUpdate = false;
 
-    function fetchData(endpoint) {
-        if (activeRequests.has(endpoint)) {
-            return Promise.reject('Request already in progress');
+    // Initialize the page
+    async function initializePage() {
+        try {
+            document.getElementById('updateStatus').textContent = 'Loading...';
+            
+            // Load channel config only
+            const channelResponse = await energyApi.getChannelConfig();
+            channelData = channelResponse;
+            
+            createChannelBoxes();
+            document.getElementById('updateStatus').textContent = '';
+        } catch (error) {
+            console.error('Error initializing page:', error);
+            document.getElementById('updateStatus').textContent = 'Error loading data: ' + error.message;
         }
-        
-        activeRequests.add(endpoint);
-        return fetch(`/rest/${endpoint}`)
-            .then(response => response.json())
-            .finally(() => activeRequests.delete(endpoint));
     }
 
-    Promise.all([fetchData('get-calibration'), fetchData('get-channel')])
-        .then(([calibrationResponse, channelResponse]) => {
-            calibrationData = calibrationResponse;
-            channelData = channelResponse;
-            createChannelBoxes();
-        })
-        .catch(error => console.error('Error:', error));
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', initializePage);
 
     function createChannelBoxes() {
         const container = document.querySelector('.channel-columns');
         container.innerHTML = ''; // Clear existing content
+
+        if (!channelData || Object.keys(channelData).length === 0) {
+            container.innerHTML = '<p>No channel data available</p>';
+            return;
+        }
 
         Object.entries(channelData).forEach(([index, channel]) => {
             const box = document.createElement('div');
             box.className = 'section-box';
             box.style.textAlign = 'center';
 
-            const calibrationOptions = Object.keys(calibrationData)
-                .map(key => `<option value="${key}" ${key === channel.calibrationLabel ? 'selected' : ''}>${key}</option>`)
-                .join('');
-
             const phaseOptions = [1, 2, 3]
                 .map(phase => `<option value="${phase}" ${phase === channel.phase ? 'selected' : ''}>${phase}</option>`)
                 .join('');
 
+            // Check if this is channel 0 (main voltage channel)
+            const isChannel0 = index == 0;
+            const activeCheckboxDisabled = isChannel0 ? 'disabled' : '';
+            const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
+
             box.innerHTML = `
+                <h3>Channel ${index}</h3>
                 <label>
                     Label:
-                    <input type="text" value="${channel.label}" id="label${index}" onchange="updateChannel(${index})">
-                </label>
-                <div style="height: 10px;"></div>
-                <label>
-                    Calibration:
-                    <select id="calibration${index}" onchange="updateChannel(${index})">
-                        ${calibrationOptions}
-                    </select>
+                    <input type="text" value="${channel.label || ''}" id="label${index}" onchange="queueChannelUpdate(${index})">
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
                     Phase:
-                    <select id="phase${index}" onchange="updateChannel(${index})">
+                    <select id="phase${index}" onchange="queueChannelUpdate(${index})">
                         ${phaseOptions}
                     </select>
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
-                    <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="updateChannel(${index})">
+                    <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="queueChannelUpdate(${index})">
                     Reverse
                 </label>
                 <div style="height: 10px;"></div>
                 <label>
-                    <input type="checkbox" ${channel.active ? 'checked' : ''} id="active${index}" onchange="updateChannel(${index})">
-                    Active
+                    <input type="checkbox" ${activeChecked} id="active${index}" onchange="queueChannelUpdate(${index})" ${activeCheckboxDisabled}>
+                    Active ${isChannel0 ? '(Main voltage - cannot be disabled)' : ''}
                 </label>
                 <div style="height: 10px;"></div>
-                <span id="power${index}"></span>
+                <span id="power${index}" style="font-weight: bold; color: #333;"></span>
             `;
             container.appendChild(box);
 
@@ -122,130 +203,175 @@
                 startPowerUpdate(index);
             }
         });
+
+        // Start global power updates if we have any active channels
+        startGlobalPowerUpdates();
     }
 
-    function startPowerUpdate(index) {
-        if (intervals[index]) {
-            clearInterval(intervals[index]);
+    function startGlobalPowerUpdates() {
+        // Stop any existing interval
+        if (powerUpdateInterval) {
+            clearInterval(powerUpdateInterval);
         }
 
-        const updatePower = () => {
-            // Only fetch if no active request for this index
-            if (!activeRequests.has(`active-power-${index}`)) {
-                activeRequests.add(`active-power-${index}`);
-                fetchData(`active-power?index=${index}`)
-                    .then(dataActivePower => {
-                        document.getElementById(`power${index}`).innerHTML = `${dataActivePower.value.toFixed(1)} W`;
-                    })
-                    .finally(() => {
-                        activeRequests.delete(`active-power-${index}`);
-                    });
+        const updateAllPowerValues = async () => {
+            try {
+                const meterValuesArray = await energyApi.getMeterValues();
+                
+                // Update only active channels
+                meterValuesArray.forEach(channelMeterData => {
+                    const index = channelMeterData.index;
+                    const powerElement = document.getElementById(`power${index}`);
+                    
+                    // Only show power if channel is active
+                    if (powerElement && channelData[index] && channelData[index].active && 
+                        channelMeterData.data && channelMeterData.data.activePower !== undefined) {
+                        powerElement.innerHTML = `${channelMeterData.data.activePower.toFixed(1)} W`;
+                    } else if (powerElement && channelData[index] && !channelData[index].active) {
+                        // Clear power display for inactive channels
+                        powerElement.innerHTML = '';
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error fetching power values:', error);
+                // Show error only on active channels
+                Object.keys(channelData).forEach(index => {
+                    if (channelData[index].active) {
+                        const powerElement = document.getElementById(`power${index}`);
+                        if (powerElement) {
+                            powerElement.innerHTML = 'Error';
+                        }
+                    }
+                });
             }
         };
 
-        updatePower(); // Initial update
-        intervals[index] = setInterval(updatePower, FETCH_THROTTLE);
+        // Initial update
+        updateAllPowerValues();
+        
+        // Set up interval for regular updates
+        powerUpdateInterval = setInterval(updateAllPowerValues, FETCH_THROTTLE);
+    }
+
+    function stopGlobalPowerUpdates() {
+        if (powerUpdateInterval) {
+            clearInterval(powerUpdateInterval);
+            powerUpdateInterval = null;
+        }
+    }
+
+    function startPowerUpdate(index) {
+        // Individual channel power updates are now handled by the global update
+        // Just ensure the power display is visible for this channel
+        const powerElement = document.getElementById(`power${index}`);
+        if (powerElement && channelData[index] && channelData[index].active) {
+            powerElement.innerHTML = 'Loading...';
+        }
     }
 
     function stopPowerUpdate(index) {
-        if (intervals[index]) {
-            clearInterval(intervals[index]);
-            document.getElementById(`power${index}`).innerHTML = '';
-            delete intervals[index];
+        // Clear individual channel power display
+        const powerElement = document.getElementById(`power${index}`);
+        if (powerElement) {
+            powerElement.innerHTML = '';
         }
-    }
-
-    function updateChannel(index) {
-        const now = Date.now();
-        if (now - lastSetChannelTime < FETCH_THROTTLE) {
-            // If there's already a pending update for this index, update it
-            // Otherwise create a new pending update
-            pendingUpdates[index] = {
-                label: document.getElementById(`label${index}`).value,
-                calibrationLabel: document.getElementById(`calibration${index}`).value,
-                reverse: document.getElementById(`reverse${index}`).checked,
-                phase: document.getElementById(`phase${index}`).value,
-                active: document.getElementById(`active${index}`).checked
-            };
-            
-            return; // Exit and wait for the throttle timeout
+    }    function queueChannelUpdate(index) {
+        // Prevent channel 0 from being disabled
+        if (index == 0) {
+            const activeCheckbox = document.getElementById(`active${index}`);
+            if (activeCheckbox && !activeCheckbox.checked) {
+                activeCheckbox.checked = true;
+                alert('Channel 0 is the main voltage channel and cannot be disabled.');
+                return;
+            }
         }
 
-        // Clear any pending update for this index
-        delete pendingUpdates[index];
-        
-        const channel = {};
-        channel[index] = {
+        const channelUpdate = {
+            index: parseInt(index),
             label: document.getElementById(`label${index}`).value,
-            calibrationLabel: document.getElementById(`calibration${index}`).value,
             reverse: document.getElementById(`reverse${index}`).checked,
             phase: parseInt(document.getElementById(`phase${index}`).value),
             active: document.getElementById(`active${index}`).checked
         };
 
-        if (channel[index].active) {
+        // Update local channelData immediately for UI responsiveness
+        if (channelData[index]) {
+            channelData[index].active = channelUpdate.active;
+            channelData[index].label = channelUpdate.label;
+            channelData[index].reverse = channelUpdate.reverse;
+            channelData[index].phase = channelUpdate.phase;
+        }
+
+        // Store in queue - this will overwrite any previous update for this channel
+        updateQueue[index] = channelUpdate;
+        
+        // Update UI responsiveness immediately
+        if (channelUpdate.active) {
             startPowerUpdate(index);
         } else {
             stopPowerUpdate(index);
         }
 
-        sendChannelUpdate(channel);
+        // Restart global power updates to include/exclude this channel
+        startGlobalPowerUpdates();
+
+        // Process updates after a short delay (debouncing)
+        if (!isProcessingUpdate) {
+            isProcessingUpdate = true;
+            setTimeout(processChannelUpdates, 500);
+        }
     }
 
-    function sendChannelUpdate(updatedChannel) {
-        if (activeRequests.has('set-channel')) {
-            return; // Don't send if there's already an active request
+    async function processChannelUpdates() {
+        if (Object.keys(updateQueue).length === 0) {
+            isProcessingUpdate = false;
+            return;
         }
 
-        lastSetChannelTime = Date.now();
-        activeRequests.add('set-channel');
-
-        fetch('/rest/set-channel', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(updatedChannel)
-        })
-        .then(response => response.json())
-        .then(data => {
-            console.log('Success:', data);
+        try {
+            document.getElementById('updateStatus').textContent = 'Updating channels...';
             
-            // After successful update, process any pending updates
-            processPendingUpdates();
-        })
-        .catch((error) => {
-            console.error('Error:', error);
-            processPendingUpdates();
-        })
-        .finally(() => {
-            activeRequests.delete('set-channel');
-        });
-    }
-
-    // New function to process pending updates
-    function processPendingUpdates() {
-        const now = Date.now();
-        if (now - lastSetChannelTime >= FETCH_THROTTLE && Object.keys(pendingUpdates).length > 0) {
-            // Take the first pending update
-            const index = Object.keys(pendingUpdates)[0];
-            const channel = {};
-            channel[index] = pendingUpdates[index];
-            delete pendingUpdates[index];
+            // Send all queued updates using PATCH for partial updates
+            const updates = Object.values(updateQueue);
+            updateQueue = {}; // Clear queue
             
-            // Update active status if needed
-            if (channel[index].active) {
-                startPowerUpdate(index);
-            } else {
-                stopPowerUpdate(index);
+            for (const update of updates) {
+                await energyApi.patchChannelConfig(update.index, update);
             }
             
-            sendChannelUpdate(channel);
+            document.getElementById('updateStatus').textContent = 'Channels updated successfully';
+            setTimeout(() => {
+                document.getElementById('updateStatus').textContent = '';
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Error updating channels:', error);
+            
+            if (error.message.includes('Channel 0 cannot be disabled')) {
+                document.getElementById('updateStatus').textContent = 'Channel 0 cannot be disabled';
+                alert('Channel 0 is the main voltage channel and cannot be disabled.');
+                // Reset channel 0 to active in UI
+                const activeCheckbox = document.getElementById('active0');
+                if (activeCheckbox) {
+                    activeCheckbox.checked = true;
+                }
+            } else {
+                document.getElementById('updateStatus').textContent = 'Error: ' + error.message;
+                alert('Error updating channels: ' + error.message);
+            }
+            
+            setTimeout(() => {
+                document.getElementById('updateStatus').textContent = '';
+            }, 5000);
         }
-    }
-
-    // Add a periodic check for pending updates
-    setInterval(processPendingUpdates, FETCH_THROTTLE);
-</script>
+        
+        isProcessingUpdate = false;
+        
+        // If there are new updates in queue, process them
+        if (Object.keys(updateQueue).length > 0) {
+            setTimeout(processChannelUpdates, 500);
+        }
+    }</script>
 
 </html>

@@ -1,5 +1,29 @@
+# Hidden files
 .pio
 .vscode
+.env
+.mypy*
 
+# Secrets
 secrets
+
+# Development files
+releases/
+logs/
 temp/
+coredump/
+
+# MacOS
+.DS_Store
+
+# Python
+__pycache__/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+
+# Python virtual environments
+venv/
+.venv/
