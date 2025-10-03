@@ -1,18 +1,14 @@
 name: PlatformIO Build
-# FIXME: ensure this build works properly
+
 on:
   push:
-    branches: [ dev, prod ]
+    branches: [ development, main ]
   pull_request:
-    branches: [ dev, prod ]
+    branches: [ development, main ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest    
-    strategy:
-      matrix:
-        environment: [esp32dev, esp32dev_nosecrets]
-      fail-fast: false
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
@@ -47,17 +43,16 @@ jobs:
         echo "dummy" > secrets/endpoint.txt
         echo "dummy" > secrets/rulemeter.txt
 
-    - name: Build firmware (${{ matrix.environment }})
+    - name: Build firmware (esp32dev)
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for ${{ matrix.environment }}..."
-        pio run -e ${{ matrix.environment }}
-        echo "✅ Build completed for ${{ matrix.environment }}!"
+        echo "🏗️ Building firmware for esp32dev..."
+        pio run -e esp32dev
+        echo "✅ Build completed for esp32dev!"
 
-    - name: Upload nosecrets firmware (for testing)
-      if: matrix.environment == 'esp32dev_nosecrets'
+    - name: Upload firmware artifact
       uses: actions/upload-artifact@v3
       with:
-        name: firmware-nosecrets
-        path: source/.pio/build/esp32dev_nosecrets/firmware.bin
+        name: firmware-esp32dev
+        path: source/.pio/build/esp32dev/firmware.bin
         retention-days: 7
