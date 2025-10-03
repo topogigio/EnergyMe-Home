@@ -19,7 +19,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: TODO to Issue
         uses: alstr/todo-to-issue-action@v5.1.13
