@@ -3,9 +3,9 @@
 // Note: all the durations hereafter are in milliseconds unless specified otherwise
 
 // Firmware info
-#define FIRMWARE_BUILD_VERSION_MAJOR "00"
+#define FIRMWARE_BUILD_VERSION_MAJOR "0"
 #define FIRMWARE_BUILD_VERSION_MINOR "12"
-#define FIRMWARE_BUILD_VERSION_PATCH "39"
+#define FIRMWARE_BUILD_VERSION_PATCH "40"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__
@@ -47,6 +47,7 @@
 // Logger
 #define LOG_PATH "/log.txt"
 #define MAX_LOG_LINES 1000
+#define MAXIMUM_LOG_FILE_SIZE (200 * 1024)
 
 // Buffer Sizes for String Operations
 // =================================

@@ -49,7 +49,7 @@
 #define SYSTEM_RESTART_DELAY (3 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations (like flushing logs)
 #define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
 #define STOP_SERVICES_TASK_NAME "stop_services_task"
-#define STOP_SERVICES_TASK_STACK_SIZE (4 * 1024)
+#define STOP_SERVICES_TASK_STACK_SIZE (6 * 1024)
 #define STOP_SERVICES_TASK_PRIORITY 10
 
 // Restart infos
@@ -122,6 +122,7 @@ void printDeviceStatusDynamic();
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
 void startMaintenanceTask();
 void stopMaintenanceTask();
+size_t getLogFileSize();
 
 // Task information utilities
 inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize)
