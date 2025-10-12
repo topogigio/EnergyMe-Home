@@ -22,6 +22,7 @@
 #include "binaries.h"
 #include "buttonhandler.h"
 #include "constants.h"
+#include "customlog.h"
 #include "customtime.h"
 #include "customwifi.h"
 #include "crashmonitor.h"

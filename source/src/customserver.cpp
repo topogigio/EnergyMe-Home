@@ -1111,8 +1111,6 @@ namespace CustomServer
         String response = http.getString();
         http.end();
 
-        SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
         DeserializationError error = deserializeJson(doc, response);
         if (error) {
             LOG_ERROR("Failed to parse GitHub API response: %s", error.c_str());
@@ -1807,9 +1805,13 @@ namespace CustomServer
                   {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-
-            doc["enabled"] = Mqtt::isCloudServicesEnabled();
             
+            #ifdef HAS_SECRETS
+            doc["enabled"] = Mqtt::isCloudServicesEnabled();
+            #else
+            doc["enabled"] = false; // If no secrets, cloud services are not enabled
+            #endif
+
             _sendJsonResponse(request, doc);
         });
 
@@ -1818,6 +1820,7 @@ namespace CustomServer
             "/api/v1/mqtt/cloud-services",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
+                #ifdef HAS_SECRETS
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES)) return;
                 
                 SpiRamAllocator allocator;
@@ -1836,6 +1839,10 @@ namespace CustomServer
                 
                 LOG_INFO("Cloud services %s via API", enabled ? "enabled" : "disabled");
                 _sendSuccessResponse(request, enabled ? "Cloud services enabled successfully" : "Cloud services disabled successfully");
+                #else
+                _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Cloud services are not available without secrets");
+                return;
+                #endif
             });
         server.addHandler(setCloudServicesHandler);
     }

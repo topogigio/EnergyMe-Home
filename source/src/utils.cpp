@@ -151,8 +151,10 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
 
     // Tasks
+    #ifdef HAS_SECRETS
     info.mqttTaskInfo = Mqtt::getMqttTaskInfo();
     info.mqttOtaTaskInfo = Mqtt::getMqttOtaTaskInfo();
+    #endif
     info.customMqttTaskInfo = CustomMqtt::getTaskInfo();
     info.customServerHealthCheckTaskInfo = CustomServer::getHealthCheckTaskInfo();
     info.customServerOtaTimeoutTaskInfo = CustomServer::getOtaTimeoutTaskInfo();
@@ -533,7 +535,9 @@ static void _restartTask(void* parameter) {
     // We do this in an Async way so if for any reason the stopping takes too long or blocks forever, it won't block the restart
     xTaskCreate([](void*) {
         LOG_DEBUG("Stopping critical services before restart");
+        #ifdef HAS_SECRETS
         Mqtt::stop();
+        #endif
         CustomServer::stop();
         Ade7953::stop();
         LOG_DEBUG("Critical services stopped");
@@ -584,7 +588,9 @@ void setRestartSystem(const char* reason, bool factoryReset) {
         LOG_ERROR("Failed to create restart task, performing immediate operation");
         CustomServer::stop();
         Ade7953::stop();
+        #ifdef HAS_SECRETS
         Mqtt::stop();
+        #endif
         _restartSystem(factoryReset);
     } else {
         LOG_DEBUG("Restart task created successfully");
