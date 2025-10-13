@@ -19,9 +19,8 @@ import base64
 import requests
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import os
-import tempfile
 import hashlib
 
 
@@ -31,7 +30,6 @@ class CrashDumpAnalyzer:
         self.base_url = f"http://{device_ip}"
         self.chunk_size = chunk_size
         self.session = requests.Session()
-        self.session.timeout = 30
         
         # Set up authentication if provided
         if username and password:
@@ -503,7 +501,7 @@ class CrashDumpAnalyzer:
             
             # Fallback to current build if no match found in releases
             if not firmware_path:
-                firmware_path = ".pio/build/esp32dev/firmware.elf"
+                firmware_path = ".pio/build/esp32s3-dev/firmware.elf"
                 if not os.path.exists(firmware_path):
                     print(f"❌ Firmware file not found: {firmware_path}")
                     print(f"   Make sure you've built the project first with: pio run")

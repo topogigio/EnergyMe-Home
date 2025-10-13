@@ -17,11 +17,14 @@
 #include <nvs.h> // For low-level NVS statistics
 #include <nvs_flash.h> // For erasing ALL the NVS
 #include <esp_ota_ops.h>
+#include "esp_efuse.h"
+#include "esp_efuse_table.h"
 #include <ESP32-targz.h>
 
 #include "binaries.h"
 #include "buttonhandler.h"
 #include "constants.h"
+#include "customlog.h"
 #include "customtime.h"
 #include "customwifi.h"
 #include "crashmonitor.h"
@@ -49,7 +52,7 @@
 #define SYSTEM_RESTART_DELAY (3 * 1000) // The delay before restarting the system after a restart request, needed to allow the system to finish the current operations (like flushing logs)
 #define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
 #define STOP_SERVICES_TASK_NAME "stop_services_task"
-#define STOP_SERVICES_TASK_STACK_SIZE (4 * 1024)
+#define STOP_SERVICES_TASK_STACK_SIZE (6 * 1024)
 #define STOP_SERVICES_TASK_PRIORITY 10
 
 // Restart infos
@@ -59,6 +62,10 @@
 
 // First boot
 #define IS_FIRST_BOOT_DONE_KEY "first_boot"
+
+// Stringify macro helper for BUILD_ENV_NAME - If you try to concatenate directly, it will crash the build
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
 
 // Even though the ArduinoJson automatically allocates the JSON documents to PSRAM when the heap is exhausted,
 // it still leads to defragmentation here. Thus, to avoid this, we explicitly use a custom allocator.
@@ -96,6 +103,7 @@ inline float roundToDecimals(float value, uint8_t decimals = 3) {
 
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
+bool readEfuseProvisioningData(EfuseProvisioningData& data);
 
 // System information and monitoring
 void populateSystemStaticInfo(SystemStaticInfo& info);
@@ -118,6 +126,7 @@ void printDeviceStatusDynamic();
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
 void startMaintenanceTask();
 void stopMaintenanceTask();
+size_t getLogFileSize();
 
 // Task information utilities
 inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize)

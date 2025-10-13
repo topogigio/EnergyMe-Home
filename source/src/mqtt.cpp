@@ -1408,6 +1408,14 @@ namespace Mqtt
         doc["sketchMD5"] = ESP.getSketchMD5();
         doc["chipId"] = ESP.getEfuseMac();
 
+        // Read eFuse provisioning data if available
+        EfuseProvisioningData efuseData;
+        if (readEfuseProvisioningData(efuseData)) {
+            doc["serialNumber"] = efuseData.serial;
+            doc["manufacturingDate"] = efuseData.manufacturingDate;
+            doc["hardwareVersion"] = efuseData.hardwareVersion;
+        }
+
         return _publishJsonStreaming(doc, _mqttTopicProvisioningRequest);
     }
 
@@ -1863,6 +1871,18 @@ namespace Mqtt
             
             offset += thisChunkSize;
             chunkIndex++;
+        }
+
+        // Publish a final message to indicate completion
+        SpiRamAllocator allocatorFinal;
+        JsonDocument docFinal(&allocatorFinal);
+        docFinal["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        docFinal["crashId"] = crashId;
+        docFinal["messageType"] = "crashComplete";
+
+        if (!_publishJsonStreaming(docFinal, _mqttTopicCrash)) {
+            LOG_ERROR("Failed to publish crash completion message");
+            return false;
         }
 
         _publishMqtt.crash = false;
