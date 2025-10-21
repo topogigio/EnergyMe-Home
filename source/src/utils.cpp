@@ -540,6 +540,7 @@ static void _restartTask(void* parameter) {
         #endif
         CustomServer::stop();
         Ade7953::stop();
+        ModbusTcp::stop();
         LOG_DEBUG("Critical services stopped");
         vTaskDelete(NULL);
     }, STOP_SERVICES_TASK_NAME, STOP_SERVICES_TASK_STACK_SIZE, NULL, STOP_SERVICES_TASK_PRIORITY, NULL);
@@ -565,12 +566,34 @@ static void _restartSystem(bool factoryReset) {
     ESP.restart();
 }
 
-void setRestartSystem(const char* reason, bool factoryReset) {
+bool setRestartSystem(const char* reason, bool factoryReset) {
     LOG_INFO("Restart required for reason: %s. Factory reset: %s", reason, factoryReset ? "true" : "false");
+
+    // Check if we can restart now (safe mode protection)
+    if (!CrashMonitor::canRestartNow()) {
+        uint32_t remainingMs = CrashMonitor::getMinimumUptimeRemaining();
+        uint32_t remainingSec = remainingMs / 1000;
+        
+        if (CrashMonitor::isInSafeMode()) {
+            LOG_FATAL(
+                "SAFE MODE: Restart blocked for %lu s to prevent infinite loops. "
+                "Reason: %s. WiFi/OTA active for remote recovery", 
+                remainingSec, reason
+            );
+        } else {
+            LOG_WARNING(
+                "Restart delayed: minimum uptime not reached (%lu s remaining to "
+                "prevent rapid restart loops)", 
+                remainingSec
+            );
+        }
+        
+        return false;
+    }
 
     if (_restartTaskHandle != NULL) {
         LOG_INFO("A restart is already scheduled. Keeping the existing one.");
-        return; // Prevent overwriting an existing restart request
+        return false; // Prevent overwriting an existing restart request
     }
 
     // Create a task that will handle the delayed restart/factory reset and stop services safely
@@ -588,6 +611,7 @@ void setRestartSystem(const char* reason, bool factoryReset) {
         LOG_ERROR("Failed to create restart task, performing immediate operation");
         CustomServer::stop();
         Ade7953::stop();
+        ModbusTcp::stop();
         #ifdef HAS_SECRETS
         Mqtt::stop();
         #endif
@@ -595,6 +619,8 @@ void setRestartSystem(const char* reason, bool factoryReset) {
     } else {
         LOG_DEBUG("Restart task created successfully");
     }
+
+    return true;
 }
 
 // Print functions

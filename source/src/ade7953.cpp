@@ -2868,7 +2868,11 @@ namespace Ade7953
     }
 
     void _recordCriticalFailure() {
-        LOG_DEBUG("Recording critical failure for ADE7953 missed interrupt");
+        LOG_DEBUG("Recording critical failure for ADE7953 missed interrupt. Current RMS values: %ld voltage, %ld current (ch A) - %ld current (ch B)", 
+            _readVoltageRms(), 
+            _readCurrentRms(Ade7953Channel::A),
+            _readCurrentRms(Ade7953Channel::B)
+        );
 
         if (_criticalFailureCount == 0) _firstCriticalFailureTime = millis64();
 
@@ -2885,6 +2889,17 @@ namespace Ade7953
             _firstCriticalFailureTime = 0;
             
             return;
+        }
+
+        // Progressive warning system
+        const uint32_t warningThreshold = ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT / 2;
+        const uint32_t almostThreshold = ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT - 5;
+        if (_criticalFailureCount == warningThreshold) { // Not >= since we want to log this only once
+            LOG_WARNING("Critical failures reaching concerning level (%lu/%lu) - missed ADE7953 interrupts", 
+                _criticalFailureCount, ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT);
+        } else if (_criticalFailureCount == almostThreshold) { // Not >= since we want to log this only once
+            LOG_WARNING("Critical failures approaching reboot threshold (%lu/%lu) - system stability at risk", 
+                _criticalFailureCount, ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT);
         }
 
         if (_criticalFailureCount >= ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT) {
