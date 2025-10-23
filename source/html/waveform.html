@@ -1,0 +1,786 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Copyright (C) 2025 Jibril Sharafi -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+    <script src="/js/api-client.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+
+    <title>Waveform Capture</title>
+    <style>
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .control-label {
+            font-weight: bold;
+            min-width: 120px;
+        }
+
+        .channel-select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            min-width: 200px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .status-idle {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .status-armed {
+            background-color: #ffc107;
+            color: black;
+        }
+
+        .status-capturing {
+            background-color: #17a2b8;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+
+        .status-complete {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .status-error {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        .stats-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .error-message {
+            padding: 15px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            color: #721c24;
+            margin-top: 10px;
+        }
+
+        .info-message {
+            padding: 15px;
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 4px;
+            color: #0c5460;
+            margin-top: 10px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        /* Tab navigation styles */
+        .tab-container {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+            position: relative;
+            bottom: -2px;
+            user-select: none;
+        }
+
+        .tab:hover {
+            background-color: #e9ecef;
+        }
+
+        .tab.active {
+            background-color: white;
+            border-bottom: 2px solid white;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .tab.has-data {
+            border-left: 4px solid #28a745;
+        }
+        
+        .tab span {
+            pointer-events: none; /* Make entire tab clickable */
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .tab-close {
+            margin-left: 10px;
+            color: #dc3545;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .tab-close:hover {
+            color: #c82333;
+        }
+
+        /* Constrain main content width and center */
+        #tabContentContainer .section-box {
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 1100px;    /* limit page width so stats and chart get real space */
+            margin: auto auto;
+            padding: 12px;
+        }
+
+        /* Chart wrapper with fixed height to prevent runaway growth */
+        .chart-wrapper {
+            width: 100%;
+            max-width: 100%;
+            height: 360px;        /* pick appropriate px height */
+            min-height: 240px;
+        }
+
+        /* Make canvas fill the wrapper (important) */
+        .chart-wrapper canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="buttonNavigation-container">
+        <a class="buttonNavigation" type="outer" href="/calibration">⚖️ Calibration</a>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-container" id="tabContainer"></div>
+
+    <section class="section-box">
+        <h2>Capture Control</h2>
+        <div class="control-panel">
+            <div class="control-row">
+                <span class="control-label">Status:</span>
+                <span id="statusIndicator" class="status-indicator status-idle">IDLE</span>
+            </div>
+
+            <div class="control-row button-group">
+                <button id="armButton" class="buttonPrimary" onclick="armCapture()">
+                    📡 Capture
+                </button>
+            </div>
+        </div>
+
+        <div id="messageContainer"></div>
+    </section>
+
+    <!-- Dynamic tab content will be inserted here -->
+    <div id="tabContentContainer"></div>
+
+    <script>
+        const api = new EnergyMeAPI();
+        let waveformChart = null;
+        let statusPollInterval = null;
+        let channelWaveforms = {}; // Store waveform data per channel: {channelIndex: data}
+        let activeChannelIndex = null;
+        let availableChannels = []; // List of channel objects with index and label
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadChannels();
+            const status = await refreshStatus();
+            
+            // If status is complete on page load, auto-fetch the data
+            if (status === 'complete') {
+                await fetchWaveformData();
+            }
+        });
+
+        /**
+         * Load available channels from API and create tabs
+         */
+        async function loadChannels() {
+            try {
+                const channels = await api.getChannelConfig();
+                
+                // API returns an array of channel objects
+                if (Array.isArray(channels)) {
+                    availableChannels = channels
+                        .filter(channel => channel && channel.active)
+                        .map(channel => ({
+                            index: channel.index,
+                            label: channel.label || `Channel ${channel.index}`
+                        }))
+                        .sort((a, b) => a.index - b.index);
+                    
+                    // Create tabs for all active channels
+                    updateAvailableChannelTabs();
+                    
+                    // Select channel 0 by default if available
+                    const channel0 = availableChannels.find(ch => ch.index === 0);
+                    if (channel0) {
+                        activeChannelIndex = 0;
+                        updateAvailableChannelTabs();
+                    } else if (availableChannels.length > 0) {
+                        activeChannelIndex = availableChannels[0].index;
+                        updateAvailableChannelTabs();
+                    }
+                }
+            } catch (error) {
+                showError('Failed to load channels: ' + error.message);
+            }
+        }
+
+        /**
+         * Update tabs to show all available channels
+         */
+        function updateAvailableChannelTabs() {
+            const tabContainer = document.getElementById('tabContainer');
+            tabContainer.innerHTML = '';
+            
+            availableChannels.forEach(channel => {
+                const tab = document.createElement('div');
+                tab.className = 'tab';
+                
+                // Mark as active if this is the selected channel
+                if (channel.index === activeChannelIndex) {
+                    tab.className += ' active';
+                }
+                
+                // Mark as has-data if we've captured this channel
+                if (channelWaveforms[channel.index]) {
+                    tab.className += ' has-data';
+                }
+                
+                tab.innerHTML = `<span>${channel.label}</span>`;
+                tab.onclick = () => selectChannelForCapture(channel.index);
+                
+                tabContainer.appendChild(tab);
+            });
+        }
+
+        /**
+         * Select a channel for capture (clicking on tab)
+         */
+        function selectChannelForCapture(channelIndex) {
+            activeChannelIndex = parseInt(channelIndex);
+            
+            // Refresh status when switching tabs
+            refreshStatus();
+            
+            // If we have captured data for this channel, display it
+            if (channelWaveforms[channelIndex]) {
+                displayWaveform(channelWaveforms[channelIndex]);
+                calculateStats(channelWaveforms[channelIndex]);
+            } else {
+                // Otherwise just update the active tab and hide content
+                hideContent();
+            }
+            
+            updateAvailableChannelTabs();
+        }
+
+        /**
+         * Arm waveform capture for active channel
+         */
+        async function armCapture() {
+            if (activeChannelIndex === null) {
+                showError('Please select a channel first');
+                return;
+            }
+
+            clearMessage();
+            setLoading(true);
+
+            try {
+                const response = await api.post('ade7953/waveform/arm', {
+                    channelIndex: activeChannelIndex
+                });
+
+                if (response.success === true) {
+                    showInfo(`Capture armed for channel ${activeChannelIndex}. Waiting for next line cycle...`);
+                    startStatusPolling();
+                } else {
+                    showError(response.message || 'Unexpected response from server');
+                }
+            } catch (error) {
+                if (error.message.includes('409')) {
+                    showError('Capture already in progress. Wait for it to complete or refresh status.');
+                } else {
+                    showError('Failed to arm capture: ' + error.message);
+                }
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        /**
+         * Poll capture status and auto-fetch data when complete
+         */
+        function startStatusPolling() {
+            stopStatusPolling();
+            statusPollInterval = setInterval(async () => {
+                const status = await refreshStatus();
+                if (status === 'complete') {
+                    stopStatusPolling();
+                    await fetchWaveformData();
+                } else if (status === 'error' || status === 'idle') {
+                    stopStatusPolling();
+                }
+            }, 500);
+        }
+
+        function stopStatusPolling() {
+            if (statusPollInterval) {
+                clearInterval(statusPollInterval);
+                statusPollInterval = null;
+            }
+        }
+
+        /**
+         * Refresh capture status
+         */
+        async function refreshStatus() {
+            try {
+                const response = await api.get('ade7953/waveform/status');
+                const status = response.state || 'unknown';
+                updateStatusIndicator(status);
+                return status;
+            } catch (error) {
+                console.error('Failed to get status:', error);
+                updateStatusIndicator('error');
+                return 'error';
+            }
+        }
+
+        /**
+         * Update status indicator UI
+         */
+        function updateStatusIndicator(status) {
+            const indicator = document.getElementById('statusIndicator');
+            indicator.className = 'status-indicator status-' + status;
+            indicator.textContent = status.toUpperCase();
+        }
+
+        /**
+         * Fetch and display waveform data
+         */
+        async function fetchWaveformData() {
+            setLoading(true);
+            clearMessage();
+
+            try {
+                const data = await api.get('ade7953/waveform/data');
+                const channelIndex = data.channelIndex;
+                
+                // Store data for this channel
+                channelWaveforms[channelIndex] = data;
+                
+                // Update tabs to show green indicator
+                updateAvailableChannelTabs();
+                
+                // Display the captured data
+                displayWaveform(data);
+                calculateStats(data);
+                
+                showInfo(`Waveform captured successfully for channel ${channelIndex}!`);
+            } catch (error) {
+                if (error.message.includes('404')) {
+                    showError('No waveform data available. Please arm capture first.');
+                } else {
+                    showError('Failed to fetch waveform data: ' + error.message);
+                }
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        /**
+         * Hide chart and stats content when no data
+         */
+        function hideContent() {
+            const contentContainer = document.getElementById('tabContentContainer');
+            contentContainer.innerHTML = '';
+            if (waveformChart) {
+                waveformChart.destroy();
+                waveformChart = null;
+            }
+        }
+
+        /**
+         * Display waveform chart with voltage and current
+         */
+        function displayWaveform(data) {
+            // Data already contains scaled values in V and A
+            const voltageValues = data.voltage;
+            const currentValues = data.current;
+            
+            // microsDelta already contains cumulative microseconds from backend
+            // Convert to milliseconds
+            const timeMs = data.microsDelta.map(micros => micros / 1000.0);
+
+            // Format time labels to 1 decimal place
+            const timeLabels = timeMs.map(t => t.toFixed(1));
+
+            // Create content container if it doesn't exist
+            const contentContainer = document.getElementById('tabContentContainer');
+            contentContainer.innerHTML = `
+                <section class="section-box">
+                    <h2>Voltage & Current Waveform</h2>
+                    <div class="chart-wrapper">
+                        <canvas id="waveformChart"></canvas>
+                    </div>
+                </section>
+
+                <div style="height: 20px;"></div>
+
+                <section class="section-box">
+                    <h2>Waveform Statistics</h2>
+                    <div class="stats-panel">
+                        <div class="stat-item">
+                            <span class="stat-label">Capture Time</span>
+                            <span id="statCaptureTime" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Samples</span>
+                            <span id="statSamples" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Duration</span>
+                            <span id="statDuration" class="stat-value">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Sampling Freq</span>
+                            <span id="statSamplingFreq" class="stat-value">-</span>
+                        </div>
+
+                        <!-- Force Voltage stats to a new full-width row -->
+                        <div style="grid-column: 1 / -1;">
+                            <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:flex-start;">
+                                <div class="stat-item">
+                                    <span class="stat-label">RMS Voltage (approx.)</span>
+                                    <span id="statRmsVoltage" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Min Voltage</span>
+                                    <span id="statMinVoltage" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Max Voltage</span>
+                                    <span id="statMaxVoltage" class="stat-value">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Force Current stats to a new full-width row -->
+                        <div style="grid-column: 1 / -1;">
+                            <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:flex-start;">
+                                <div class="stat-item">
+                                    <span class="stat-label">RMS Current (approx.)</span>
+                                    <span id="statRmsCurrent" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Min Current</span>
+                                    <span id="statMinCurrent" class="stat-value">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Max Current</span>
+                                    <span id="statMaxCurrent" class="stat-value">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <button class="buttonSecondary" onclick="downloadData(${data.channelIndex})">
+                            💾 Download Data
+                        </button>
+                    </div>
+                </section>
+            `;
+
+            // Destroy existing chart if any
+            if (waveformChart) {
+                waveformChart.destroy();
+            }
+
+            // Create combined waveform chart with dual Y-axes
+            const ctx = document.getElementById('waveformChart').getContext('2d');
+            waveformChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: 'Voltage (V)',
+                            data: voltageValues,
+                            borderColor: 'rgb(75, 192, 192)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y-voltage'
+                        },
+                        {
+                            label: 'Current (A)',
+                            data: currentValues,
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y-current'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time (ms)'
+                            },
+                            ticks: {
+                                callback: function(value, index) {
+                                    // Show every Nth label to avoid crowding
+                                    return index % Math.ceil(timeLabels.length / 20) === 0 ? this.getLabelForValue(value) : '';
+                                }
+                            }
+                        },
+                        'y-voltage': {
+                            type: 'linear',
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Voltage (V)'
+                            },
+                            grid: {
+                                color: 'rgba(75, 192, 192, 0.1)'
+                            }
+                        },
+                        'y-current': {
+                            type: 'linear',
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Current (A)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                }
+            });
+        }
+
+        /**
+         * Calculate and display statistics
+         */
+        function calculateStats(data) {
+            // Data already contains scaled values in V and A
+            const voltageValues = data.voltage;
+            const currentValues = data.current;
+            
+            // microsDelta contains cumulative microseconds, last value is total duration
+            const totalDurationUs = data.microsDelta[data.microsDelta.length - 1];
+            const durationMs = (totalDurationUs / 1000.0).toFixed(1);
+            
+            // Calculate sampling frequency
+            const samplingFreqHz = data.sampleCount > 1 ? ((data.sampleCount - 1) / (totalDurationUs / 1000000.0)).toFixed(0) : 0;
+
+            // Calculate RMS (Root Mean Square) values
+            const voltageRms = Math.sqrt(voltageValues.reduce((sum, v) => sum + v * v, 0) / voltageValues.length).toFixed(1);
+            const minVoltage = Math.min(...voltageValues).toFixed(1);
+            const maxVoltage = Math.max(...voltageValues).toFixed(1);
+            
+            const currentRms = Math.sqrt(currentValues.reduce((sum, i) => sum + i * i, 0) / currentValues.length).toFixed(3);
+            const minCurrent = Math.min(...currentValues).toFixed(3);
+            const maxCurrent = Math.max(...currentValues).toFixed(3);
+            
+            // Format capture timestamp (convert unix millis to local ISO time with milliseconds)
+            let captureTimeStr = '-';
+            if (data.captureStartUnixMillis) {
+                const captureDate = new Date(data.captureStartUnixMillis);
+                captureTimeStr = captureDate.toLocaleString('en-GB', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    fractionalSecondDigits: 3
+                }).replace(',', '');
+            }
+
+            // Update UI
+            document.getElementById('statCaptureTime').textContent = captureTimeStr;
+            document.getElementById('statSamples').textContent = data.sampleCount;
+            document.getElementById('statDuration').textContent = `${durationMs} ms`;
+            document.getElementById('statSamplingFreq').textContent = `${samplingFreqHz} Hz`;
+            document.getElementById('statRmsVoltage').textContent = `${voltageRms} V`;
+            document.getElementById('statMinVoltage').textContent = `${minVoltage} V`;
+            document.getElementById('statMaxVoltage').textContent = `${maxVoltage} V`;
+            document.getElementById('statRmsCurrent').textContent = `${currentRms} A`;
+            document.getElementById('statMinCurrent').textContent = `${minCurrent} A`;
+            document.getElementById('statMaxCurrent').textContent = `${maxCurrent} A`;
+        }
+
+        /**
+         * Download waveform data as JSON
+         */
+        function downloadData(channelIndex) {
+            const data = channelWaveforms[channelIndex];
+            if (!data) {
+                showError('No waveform data to download');
+                return;
+            }
+
+            const dataStr = JSON.stringify(data, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `waveform_ch${channelIndex}_${new Date().getTime()}.json`;
+            link.click();
+            
+            URL.revokeObjectURL(url);
+        }
+
+        /**
+         * UI Helper Functions
+         */
+        function setLoading(loading) {
+            const panel = document.querySelector('.control-panel');
+            if (panel) {
+                if (loading) {
+                    panel.classList.add('loading');
+                } else {
+                    panel.classList.remove('loading');
+                }
+            }
+        }
+
+        function showError(message) {
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+
+        function showInfo(message) {
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `<div class="info-message">${message}</div>`;
+        }
+
+        function clearMessage() {
+            document.getElementById('messageContainer').innerHTML = '';
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopStatusPolling();
+        });
+    </script>
+</body>
+
+</html>

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #include "customwifi.h"
 
 namespace CustomWifi
@@ -189,6 +192,8 @@ namespace CustomWifi
     _setupMdns();
     // Note: printDeviceStatusDynamic() removed to avoid flash I/O from PSRAM task
 
+    Led::clearPattern(Led::PRIO_MEDIUM); // Ensure that if we are connected again, we don't keep the blue pattern
+    Led::setGreen(Led::PRIO_NORMAL); // Hack: to ensure we get back to green light, we set it here even though a proper LED manager would handle priorities better
     LOG_INFO("WiFi fully connected and operational");
   }
 
@@ -215,8 +220,6 @@ namespace CustomWifi
     char hostname[WIFI_SSID_BUFFER_SIZE];
     snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
 
-    Led::blinkBlueSlow(Led::PRIO_MEDIUM);
-    
     // Try initial connection with retries for handshake timeouts
     LOG_DEBUG("Attempt WiFi connection");
       
@@ -279,7 +282,7 @@ namespace CustomWifi
 
         case WIFI_EVENT_DISCONNECTED:
           statistics.wifiConnectionError++;
-          Led::blinkBlueSlow(Led::PRIO_MEDIUM);
+          Led::pulseBlue(Led::PRIO_MEDIUM);
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
 

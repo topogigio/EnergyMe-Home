@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #pragma once
 
 #include <WiFiManager.h>
@@ -10,6 +13,7 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include "esp_ota_ops.h"
+#include "esp_task_wdt.h"
 
 #include "constants.h"
 #include "crashmonitor.h"
@@ -67,6 +71,7 @@
 #define HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA 512
 #define HTTP_MAX_CONTENT_LENGTH_ADE7953_REGISTER 128
 #define HTTP_MAX_CONTENT_LENGTH_ADE7953_ENERGY 256
+#define HTTP_MAX_CONTENT_LENGTH_ADE7953_WAVEFORM_ARM 64
 #define HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES 64
 #define HTTP_MAX_CONTENT_LENGTH_PASSWORD 256
 

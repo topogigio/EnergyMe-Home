@@ -36,6 +36,7 @@ The firmware is built with C++ using the *PlatformIO* ecosystem and *Arduino 3.x
 - **Crash Recovery**: Automatic recovery and firmware rollback on failures
 - **WiFi Setup**: Captive portal for configuration and mDNS support (`energyme.local`)
 - **OTA Updates**: Firmware updates with MD5 verification and rollback
+- **Waveform Analyzer**: Capture high-resolution voltage & current waveforms per channel from the web UI (`/waveform`) and download JSON for offline analysis. ![Waveform](resources/waveform.png)
 
 For detailed architecture, implementation details, and API documentation, see [`source/README.md`](source/README.md).
 
@@ -79,4 +80,9 @@ Contributions are welcome! Please read the [contributing guidelines](CONTRIBUTIN
 
 ## License
 
-This project is licensed under the terms of the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+This project contains both software and hardware components:
+
+- **Software**: Licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0)
+- **Hardware**: Licensed under the [CERN Open Hardware Licence Version 2 - Permissive](LICENSE-HARDWARE) (CERN-OHL-P-2.0)
+
+See the respective license files for full details.

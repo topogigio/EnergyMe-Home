@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #pragma once
 
 // Note: all the durations hereafter are in milliseconds unless specified otherwise
@@ -5,7 +8,7 @@
 // Firmware info
 #define FIRMWARE_BUILD_VERSION_MAJOR "1"
 #define FIRMWARE_BUILD_VERSION_MINOR "0"
-#define FIRMWARE_BUILD_VERSION_PATCH "0"
+#define FIRMWARE_BUILD_VERSION_PATCH "1"
 #define FIRMWARE_BUILD_VERSION FIRMWARE_BUILD_VERSION_MAJOR "." FIRMWARE_BUILD_VERSION_MINOR "." FIRMWARE_BUILD_VERSION_PATCH
 
 #define FIRMWARE_BUILD_DATE __DATE__

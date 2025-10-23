@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #include "customserver.h"
 
 namespace CustomServer
@@ -97,6 +100,7 @@ namespace CustomServer
     static void _setupOtaMd5Verification(AsyncWebServerRequest *request);
     static bool _writeOtaChunk(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index);
     static void _finalizeOtaUpload(AsyncWebServerRequest *request);
+    static void _restoreTaskWatchdog();
     
     // Logging helper functions
     static bool _parseLogLevel(const char *levelStr, LogLevel &level);
@@ -626,6 +630,7 @@ namespace CustomServer
         server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", info_html); });
         server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", log_html); });
         server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", update_html); });
+        server.on("/waveform", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", waveform_html); });
 
         // Swagger UI
         server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", swagger_ui_html); });
@@ -773,6 +778,9 @@ namespace CustomServer
         // Stop OTA timeout task since OTA process is completing
         _stopOtaTimeoutTask();
         
+        // Re-initialize task watchdog after OTA
+        _restoreTaskWatchdog();
+        
         if (Update.hasError()) {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
@@ -833,6 +841,31 @@ namespace CustomServer
         }
     }
 
+    static void _restoreTaskWatchdog()
+    {
+        // Re-initialize task watchdog after OTA (it was suspended during OTA flash operations)
+        LOG_DEBUG("Re-initializing task watchdog after OTA");
+        esp_task_wdt_config_t wdt_config = {
+            .timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000,
+            .idle_core_mask = 0b11, // both cores are enabled (enable by setting the bit of the i core to 1)
+            .trigger_panic = true
+        };
+        
+        // Try to reconfigure first (in case deinit didn't fully stop it)
+        esp_err_t err = esp_task_wdt_reconfigure(&wdt_config);
+        if (err == ESP_ERR_INVALID_STATE) {
+            // Watchdog not initialized, initialize it fresh
+            LOG_DEBUG("Watchdog not active, initializing fresh");
+            err = esp_task_wdt_init(&wdt_config);
+        }
+        
+        if (err != ESP_OK) {
+            LOG_ERROR("Failed to restore task watchdog: %s", esp_err_to_name(err));
+        } else {
+            LOG_DEBUG("Task watchdog restored successfully");
+        }
+    }
+
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename)
     {
         LOG_INFO("Starting OTA update with file: %s", filename.c_str());
@@ -871,12 +904,18 @@ namespace CustomServer
         // Start OTA timeout watchdog task before beginning the actual OTA process
         _startOtaTimeoutTask();
         
+        // Suspend task watchdog to prevent timeout during flash operations
+        // Flash writes disable interrupts/cache which prevents IDLE task from feeding watchdog
+        LOG_DEBUG("Suspending task watchdog for OTA flash operations");
+        esp_task_wdt_deinit(); // Deinitialize watchdog - will be re-initialized after OTA
+        
         // Begin OTA update with known size
         if (!Update.begin(contentLength, U_FLASH)) {
             LOG_ERROR("Failed to begin OTA update: %s", Update.errorString());
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Failed to begin update");
             Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
             _stopOtaTimeoutTask(); // Stop timeout task on failure
+            _restoreTaskWatchdog(); // Restore watchdog on failure
             return false;
         }
         
@@ -926,6 +965,7 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Write failed");
             Update.abort();
             _stopOtaTimeoutTask(); // Stop timeout task on write failure
+            _restoreTaskWatchdog(); // Restore watchdog on failure
             return false;
         }
         
@@ -1239,8 +1279,11 @@ namespace CustomServer
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            _sendSuccessResponse(request, "System restart initiated");
-            setRestartSystem("System restart requested via API"); });
+            if (setRestartSystem("System restart requested via API")) {
+                _sendSuccessResponse(request, "System restart initiated");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_LOCKED, "Failed to initiate restart. Another restart may already be in progress or restart is currently locked");
+            } });
 
         // Factory reset
         server.on("/api/v1/system/factory-reset", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -1249,6 +1292,35 @@ namespace CustomServer
 
             _sendSuccessResponse(request, "Factory reset initiated");
             setRestartSystem("Factory reset requested via API", true); });
+
+        // Safe mode info
+        server.on("/api/v1/system/safe-mode", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["active"] = CrashMonitor::isInSafeMode();
+            doc["canRestartNow"] = CrashMonitor::canRestartNow();
+            doc["minimumUptimeRemainingMs"] = CrashMonitor::getMinimumUptimeRemaining();
+            if (CrashMonitor::isInSafeMode()) {
+                doc["message"] = "Device in safe mode - restart protection active to prevent loops";
+                doc["action"] = "Wait for minimum uptime or perform OTA update to fix underlying issue";
+            }
+
+            _sendJsonResponse(request, doc); });
+
+        // Clear safe mode
+        server.on("/api/v1/system/safe-mode/clear", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            if (CrashMonitor::isInSafeMode()) {
+                CrashMonitor::clearSafeModeCounters();
+                _sendSuccessResponse(request, "Safe mode cleared. Device will restart.");
+                setRestartSystem("Safe mode manually cleared via API");
+            } else {
+                _sendSuccessResponse(request, "Device is not in safe mode");
+            } });
 
         // Check if secrets exist
         server.on("/api/v1/system/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -1797,6 +1869,105 @@ namespace CustomServer
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;
             
+            _sendJsonResponse(request, doc);
+        });
+
+        // === WAVEFORM CAPTURE ENDPOINTS ===
+        
+        // Arm waveform capture for a channel
+        static AsyncCallbackJsonWebHandler *armWaveformCaptureHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/waveform/arm",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+            if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ADE7953_WAVEFORM_ARM)) return;
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc.set(json);
+
+            if (!doc["channelIndex"].is<uint8_t>()) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid channelIndex");
+                return;
+            }
+
+            uint8_t channelIndex = doc["channelIndex"].as<uint8_t>();
+
+            if (!isChannelValid(channelIndex)) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                return;
+            }
+
+            bool success = Ade7953::startWaveformCapture(channelIndex);
+            
+            if (!success) {
+                Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
+                if (state == Ade7953::CaptureState::ERROR) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Waveform capture buffer allocation failed");
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Waveform capture already in progress");
+                }
+                return;
+            }
+
+            LOG_DEBUG("Waveform capture armed for channel %u via API", channelIndex);
+            _sendSuccessResponse(request, "Waveform capture armed successfully");
+        });
+        server.addHandler(armWaveformCaptureHandler);
+
+        // Get waveform capture status
+        server.on("/api/v1/ade7953/waveform/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
+            
+            switch (state) {
+                case Ade7953::CaptureState::IDLE:
+                    doc["state"] = "idle";
+                    break;
+                case Ade7953::CaptureState::ARMED:
+                    doc["state"] = "armed";
+                    break;
+                case Ade7953::CaptureState::CAPTURING:
+                    doc["state"] = "capturing";
+                    break;
+                case Ade7953::CaptureState::COMPLETE:
+                    doc["state"] = "complete";
+                    break;
+                case Ade7953::CaptureState::ERROR:
+                    doc["state"] = "error";
+                    break;
+            }
+            doc["channel"] = Ade7953::getWaveformCaptureChannel();
+
+            LOG_DEBUG("Waveform capture status retrieved via API. Status for channel %u: %s",
+                      doc["channel"].as<uint8_t>(),
+                      doc["state"].as<const char *>());
+            _sendJsonResponse(request, doc);
+        });
+
+        // Get waveform capture data
+        server.on("/api/v1/ade7953/waveform/data", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
+            
+            if (state != Ade7953::CaptureState::COMPLETE) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No waveform data available");
+                return;
+            }
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            bool success = Ade7953::getWaveformCaptureAsJson(doc);
+            
+            if (!success) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve waveform data");
+                return;
+            }
+
+            LOG_DEBUG("Waveform data retrieved via API");
             _sendJsonResponse(request, doc);
         });
 

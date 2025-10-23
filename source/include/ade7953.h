@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #pragma once
 
 #include <AdvancedLogger.h>
@@ -79,12 +82,19 @@
 // The LSB per volt is therefore 9032007 / 350.4 = 25779
 // For embedded systems, multiplications are better than divisions, so we use a float constant which is VOLT_PER_LSB = 1 / 25779
 #define VOLT_PER_LSB 0.0000387922f
-#define CYCLES_PER_SECOND 50 // 50Hz mains frequency
+#define VOLT_PER_LSB_INSTANTANEOUS 0.000076236f // Same calculations as above, but using 500mV as peak and 6500000 as full scale
 #define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet)
 #define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f 
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
 #define DEFAULT_FALLBACK_FREQUENCY 50 // Most of the world is 50 Hz
 
+// Waveform capture
+#define WAVEFORM_CYCLES_TO_CAPTURE 4    // Number of line cycles to capture
+#define SAMPLING_RATE_INSTANTANEOUS_VALUES 6990 // 6.99 kHz (as given by datasheet) is the maximum rate of update of the instantaneous values
+#define WAVEFORM_BUFFER_SIZE \
+    ((size_t)(((float)WAVEFORM_CYCLES_TO_CAPTURE / (float)DEFAULT_FALLBACK_FREQUENCY) \
+              * SAMPLING_RATE_INSTANTANEOUS_VALUES))
+#define WAVEFORM_CAPTURE_MAX_DURATION_MICROS (2 * 1000000 * WAVEFORM_CYCLES_TO_CAPTURE) / DEFAULT_FALLBACK_FREQUENCY // 2x margin
 
 // Configuration Preferences Keys
 #define CONFIG_SAMPLE_TIME_KEY "sample_time"
@@ -197,7 +207,7 @@
 #ifdef ENV_DEV
 #define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (10 * 5) // 5x higher limit in dev environment
 #else
-#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT 10
+#define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT 50  // This cannot be too low as if we keep missing an interrupt we would reboot every few seconds
 #endif
 #define ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS (5 * 60 * 1000) // Reset counter after 5 minutes
 
@@ -239,6 +249,7 @@
 // Enumeration for different types of ADE7953 interrupts
 enum class Ade7953InterruptType {
   CYCEND,         // Line cycle end - normal meter reading
+  WSMP,           // Waveform sample ready - high-speed capture
   RESET,          // Device reset detected
   CRC_CHANGE,     // CRC register change detected
   OTHER           // Other interrupts (SAG, etc.)
@@ -419,6 +430,15 @@ struct Ade7953Configuration
 
 namespace Ade7953
 {
+    // Waveform capture state machine
+    enum class CaptureState {
+        IDLE,       // Not capturing and not requested
+        ARMED,      // Requested, waiting for the correct channel to come up in the cycle
+        CAPTURING,  // High-frequency sampling is in progress
+        COMPLETE,   // Capture is finished and data is ready for retrieval
+        ERROR       // An error occurred (e.g., buffer allocation failed)
+    };
+
     // Core lifecycle management
     bool begin(
         uint8_t ssPin,
@@ -515,4 +535,11 @@ namespace Ade7953
     TaskInfo getMeterReadingTaskInfo();
     TaskInfo getEnergySaveTaskInfo();
     TaskInfo getHourlyCsvTaskInfo();
+
+    // Waveform capture API
+    bool startWaveformCapture(uint8_t channelIndex);
+    uint8_t getWaveformCaptureChannel();
+    CaptureState getWaveformCaptureStatus();
+    uint16_t getWaveformCaptureData(int32_t* vBuffer, int32_t* iBuffer, uint64_t* microsBuffer, uint16_t bufferSize);
+    bool getWaveformCaptureAsJson(JsonDocument& jsonDocument);
 };

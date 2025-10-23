@@ -20,7 +20,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.13'
+        python-version: '3.11.7' # Same version as PlatformIO installs on its own via VSCode extension
 
     - name: Cache PlatformIO
       uses: actions/cache@v4
@@ -125,7 +125,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
-        python-version: '3.13'
+        python-version: '3.11.7' # Same version as PlatformIO installs on its own via VSCode extension
 
     - name: Cache PlatformIO
       uses: actions/cache@v4
@@ -175,9 +175,9 @@ jobs:
         ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
       run: |
         echo "🔐 Injecting real secrets..."
-        echo "$PRIVATE_CLAIM_PEM" > privateclaim.pem
-        echo "$CERT_CLAIM_PEM" > certclaim.pem
-        echo "$ENCRYPTION_KEY" > encryptionkey.txt
+        printf "%s" "$PRIVATE_CLAIM_PEM" > privateclaim.pem
+        printf "%s" "$CERT_CLAIM_PEM" > certclaim.pem
+        printf "%s" "$ENCRYPTION_KEY" > encryptionkey.txt
         echo "✅ Secrets injected successfully"
 
     - name: Build firmware with real secrets (${{ steps.envs.outputs.ENV1 }})

@@ -1,7 +1,5 @@
-/*
-EnergyMe - Home
-Copyright (C) 2025 Jibril Sharafi
-*/
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
 
 #include <Arduino.h>
 #include <AdvancedLogger.h>
@@ -77,8 +75,9 @@ void setup()
   LOG_DEBUG("Callbacks for AdvancedLogger set up successfully");
 
   LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
-  LOG_INFO("Build version: %s | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
+  LOG_INFO("Build version: %s (MD5: %s) | Build date: %s %s | Device ID: %s", FIRMWARE_BUILD_VERSION, ESP.getSketchMD5().c_str(), FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME, DEVICE_ID);
   
+  Led::setOrange(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up crash monitor...");
   CrashMonitor::begin();
   LOG_INFO("Crash monitor setup done");
@@ -99,18 +98,17 @@ void setup()
   LOG_INFO("Button handler setup done");
 
   LOG_DEBUG("Setting up ADE7953...");
-  if (Ade7953::begin(
+  if (
+    Ade7953::begin(
       ADE7953_SS_PIN,
       ADE7953_SCK_PIN,
       ADE7953_MISO_PIN,
       ADE7953_MOSI_PIN,
       ADE7953_RESET_PIN,
-      ADE7953_INTERRUPT_PIN)
-    ) {
-      LOG_INFO("ADE7953 setup done");
-  } else {
-      LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
-  }
+      ADE7953_INTERRUPT_PIN
+    )
+  ) LOG_INFO("ADE7953 setup done");
+  else LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
 
   Led::setBlue(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up WiFi...");
@@ -123,10 +121,10 @@ void setup()
     delay(1000);
   }
 
-  // Add UDP logging setup after WiFi
-  LOG_DEBUG("Setting up UDP logging...");
+  // Add custom logging setup after WiFi
+  LOG_DEBUG("Setting up custom logging...");
   CustomLog::begin();
-  LOG_INFO("UDP logging setup done");
+  LOG_INFO("Custom logging setup done");
 
   LOG_DEBUG("Syncing time...");
   if (CustomTime::begin()) LOG_INFO("Initial time sync successful");
@@ -158,7 +156,13 @@ void setup()
   startMaintenanceTask();
   LOG_INFO("Maintenance task started");
 
-  Led::setGreen(Led::PRIO_NORMAL);
+  // Visual indicator for safe mode (restart protection active)
+  if (CrashMonitor::isInSafeMode()) {
+    Led::setPurple(Led::PRIO_CRITICAL); // Purple = safe mode (restart protection)
+  } else {
+    Led::setGreen(Led::PRIO_NORMAL);
+  }
+  
   printStatistics();
   printDeviceStatusDynamic();
   LOG_INFO("Setup done! Let's get this energetic party started!");

@@ -44,12 +44,41 @@ void loop() {
 
 ### Stability Features
 
-**Crash Monitor:**
+**Crash Monitor - Two-Tier Restart Protection:**
+
+The system implements a hierarchical protection against restart loops to ensure device remains accessible:
+
+#### Tier 1: Safe Mode (Rapid Loop Protection)
+
+- **Trigger**: 5+ restarts within 60 seconds each (20+ in dev mode)
+- **Action**:
+  - Blocks all restart attempts for 5-minute minimum uptime
+  - **All systems remain operational**: WiFi, OTA, web interface, ADE7953, APIs
+  - Visual indicator: Purple LED
+- **Recovery**: Auto-clears after 30 minutes of stable operation or next restart > 60s uptime
+- **Use Case**: Any rapid restart loop condition (software bugs, config issues, etc.)
+
+#### Tier 2: Rollback/Factory Reset (Persistent Failure Recovery)
+
+- **Trigger**: 3+ consecutive crashes OR 10+ consecutive resets (10/30 in dev mode)
+- **Action**:
+  1. Attempts firmware rollback (if available, once per boot cycle)
+  2. Performs factory reset if rollback unavailable or failed
+- **Recovery**: Counters reset after 180 seconds of stable operation
+- **Use Case**: Bad firmware updates or persistent hardware failures
+
+#### How They Work Together
+
+- Safe mode activates first for rapid loops (prevents OTA lockout, keeps device accessible)
+- Crash/reset tracking continues in background
+- If failures persist in safe mode → triggers rollback/factory reset
+- Independent counter management (timing-based vs stability-based)
+
+#### Additional Features
 
 - RTC memory persistence (survives reboots)
-- Consecutive crash/reset tracking
-- Automatic firmware rollback after 3 crashes or 10 resets, otherwise factory reset
-- ESP32 core dump support
+- ESP32 core dump support with backtrace decoding
+- Automatic MQTT crash reporting (if configured)
 
 **Memory Management:**
 
@@ -65,6 +94,7 @@ void loop() {
 - Dual channels: A (direct) and B (multiplexed)
 - Line cycle accumulation, no-load detection
 - Task-based non-blocking measurement loops
+ - Waveform Analyzer: on-demand high-resolution voltage & current captures per channel, accessible from the web UI (`/waveform`) with JSON export for offline analysis. ![Waveform](../resources/waveform.png)
 
 **Multiplexer:**
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Jibril Sharafi
+
 #pragma once
 
 #include <AdvancedLogger.h>
@@ -91,6 +94,11 @@ inline uint64_t millis64() {
     return esp_timer_get_time() / 1000ULL;
 }
 
+// Same reason as above
+inline uint64_t micros64() {
+    return esp_timer_get_time();
+}
+
 // Validation utilities
 inline bool isChannelValid(uint8_t channel) {return channel < CHANNEL_COUNT;}
 
@@ -141,7 +149,7 @@ inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize)
 TaskInfo getMaintenanceTaskInfo();
 
 // System restart and maintenance
-void setRestartSystem(const char* reason, bool factoryReset = false);
+bool setRestartSystem(const char* reason, bool factoryReset = false);
 
 // JSON utilities
 bool safeSerializeJson(JsonDocument &jsonDocument, char* buffer, size_t bufferSize, bool truncateOnError = false);

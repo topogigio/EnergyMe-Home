@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025 Jibril Sharafi
+
 openapi: 3.0.0
 info:
   title: EnergyMe - Home | API
@@ -204,7 +207,7 @@ paths:
   /api/v1/system/info:
     get:
       summary: Get system information
-      description: Get detailed system information including firmware, hardware, and build details
+      description: Get detailed system information including firmware, hardware, build details, and safe mode status
       tags:
         - System
       responses:
@@ -217,8 +220,29 @@ paths:
                 properties:
                   static:
                     type: object
+                    description: Static system information (hardware, firmware version, etc.)
                   dynamic:
                     type: object
+                    description: Dynamic system information (uptime, memory usage, temperature, etc.)
+                  safeMode:
+                    type: object
+                    description: Safe mode status and restart protection information
+                    properties:
+                      active:
+                        type: boolean
+                        description: Whether safe mode is currently active
+                      canRestartNow:
+                        type: boolean
+                        description: Whether the device can be restarted now
+                      minimumUptimeRemainingMs:
+                        type: integer
+                        description: Milliseconds remaining before restart is allowed
+                      message:
+                        type: string
+                        description: Human-readable message about safe mode (only present if active)
+                      action:
+                        type: string
+                        description: Recommended recovery action (only present if active)
 
   /api/v1/system/statistics:
     get:
@@ -290,11 +314,65 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '423':
+          description: Restart locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Failed to initiate restart. Another restart may already be in progress or restart is currently locked"
 
   /api/v1/system/factory-reset:
     post:
       summary: Factory reset
       description: Reset the system to factory defaults (clears all configuration)
+      tags:
+        - System
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+
+  /api/v1/system/safe-mode:
+    get:
+      summary: Get safe mode status
+      description: Check if the device is in safe mode (rapid restart protection) and get timing information
+      tags:
+        - System
+      responses:
+        '200':
+          description: Safe mode status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                    description: Whether safe mode is currently active
+                    example: true
+                  canRestartNow:
+                    type: boolean
+                    description: Whether the device can be restarted now (minimum uptime reached)
+                    example: false
+                  minimumUptimeRemainingMs:
+                    type: integer
+                    description: Milliseconds remaining before restart is allowed
+                    example: 180000
+                  message:
+                    type: string
+                    description: Human-readable message about safe mode status
+                    example: "Device in safe mode - restart protection active to prevent loops"
+                  action:
+                    type: string
+                    description: Recommended action to recover from safe mode
+                    example: "Perform OTA update to fix underlying issue"
+
+  /api/v1/system/safe-mode/clear:
+    post:
+      summary: Clear safe mode
+      description: Manually clear safe mode counters and restart to re-enable ADE7953 monitoring
       tags:
         - System
       responses:
@@ -1870,6 +1948,150 @@ paths:
                 $ref: '#/components/schemas/SuccessResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+
+  /api/v1/ade7953/waveform/arm:
+    post:
+      summary: Arm waveform capture
+      description: |
+        Arms the waveform capture system to capture voltage and current samples for a specific channel.
+        The capture is non-blocking and will start when the specified channel becomes active in the multiplexer cycle.
+        Wait time varies from 200ms to 3+ seconds depending on channel position in the cycle.
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - channelIndex
+              properties:
+                channelIndex:
+                  type: integer
+                  minimum: 0
+                  maximum: 16
+                  description: Channel index to capture waveform from
+                  example: 0
+      responses:
+        '200':
+          description: Waveform capture armed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "armed"
+                  channelIndex:
+                    type: integer
+                    example: 0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Capture already in progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Capture already in progress"
+
+  /api/v1/ade7953/waveform/status:
+    get:
+      summary: Get waveform capture status
+      description: |
+        Returns the current state of the waveform capture system.
+        Use this endpoint to poll for completion after arming a capture.
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Current capture status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                    enum: [idle, armed, capturing, complete, error]
+                    description: |
+                      - idle: No capture in progress
+                      - armed: Waiting for channel to become active
+                      - capturing: Currently sampling waveform
+                      - complete: Capture finished, data ready
+                      - error: Capture failed
+                    example: "complete"
+
+  /api/v1/ade7953/waveform/data:
+    get:
+      summary: Get captured waveform data
+      description: |
+        Retrieves the captured waveform data including voltage, current, and microsecond timestamps.
+        Returns 404 if no complete capture is available.
+        Successfully fetching data resets the capture state to idle.
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Waveform data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channelIndex:
+                    type: integer
+                    description: Channel that was captured
+                    example: 0
+                  state:
+                    type: string
+                    example: "complete"
+                  captureStartUnixMillis:
+                    type: integer
+                    format: int64
+                    description: Unix timestamp in milliseconds when capture started
+                    example: 1729612345678
+                  sampleCount:
+                    type: integer
+                    description: Number of samples captured
+                    example: 1200
+                  voltage:
+                    type: array
+                    description: Voltage samples in volts
+                    items:
+                      type: number
+                      format: float
+                    example: [230.5, 231.2, 230.8]
+                  current:
+                    type: array
+                    description: Current samples in amps
+                    items:
+                      type: number
+                      format: float
+                    example: [5.2, 5.3, 5.1]
+                  microsDelta:
+                    type: array
+                    description: Cumulative microseconds from capture start for each sample
+                    items:
+                      type: integer
+                      format: int64
+                    example: [20, 53, 87, 120]
+        '404':
+          description: No complete waveform data available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "No waveform data available"
+
 tags:
   - name: System
     description: System management and information endpoints
