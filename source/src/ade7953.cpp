@@ -61,6 +61,17 @@ namespace Ade7953
     static TaskHandle_t _hourlyCsvSaveTaskHandle = NULL;
     static bool _hourlyCsvSaveTaskShouldRun = false;
 
+    // Waveform capture state and buffers
+    static CaptureState _captureState = CaptureState::IDLE;
+    static uint8_t _captureRequestedChannel = INVALID_CHANNEL;
+    static uint8_t _captureChannel = INVALID_CHANNEL;  // The channel being actively captured
+    static uint16_t _captureSampleCount = 0;
+    static uint64_t _captureStartUnixMillis = 0;
+    static uint64_t _captureStartMicros = 0;  // Microseconds timestamp at capture start
+    static int32_t* _voltageWaveformBuffer = nullptr;
+    static int32_t* _currentWaveformBuffer = nullptr;
+    static uint64_t* _microsWaveformBuffer = nullptr;  // Microseconds delta from start for each sample
+
     // Configuration and data arrays
     static Ade7953Configuration _configuration;
     MeterValues _meterValues[CHANNEL_COUNT];
@@ -97,6 +108,7 @@ namespace Ade7953
     static void _detachInterruptHandler();
     static void IRAM_ATTR _isrHandler();
     static void _handleCycendInterrupt(uint64_t linecycUnix);
+    static void _pollWaveformSamples();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
     static void _handleOtherInterrupt();
@@ -254,6 +266,19 @@ namespace Ade7953
 
         _initializeMutexes();
         LOG_DEBUG("Initialized SPI mutexes");
+
+        // Allocate PSRAM buffers for waveform capture
+        _voltageWaveformBuffer = (int32_t*)ps_malloc(WAVEFORM_BUFFER_SIZE * sizeof(int32_t));
+        _currentWaveformBuffer = (int32_t*)ps_malloc(WAVEFORM_BUFFER_SIZE * sizeof(int32_t));
+        _microsWaveformBuffer = (uint64_t*)ps_malloc(WAVEFORM_BUFFER_SIZE * sizeof(uint64_t));
+
+        if (!_voltageWaveformBuffer || !_currentWaveformBuffer || !_microsWaveformBuffer) {
+            LOG_ERROR("Failed to allocate waveform buffers from PSRAM");
+            _captureState = CaptureState::ERROR;
+            // Continue initialization - waveform capture just won't be available
+        } else {
+            LOG_DEBUG("Allocated waveform buffers in PSRAM (%u samples)", WAVEFORM_BUFFER_SIZE);
+        }
       
         _setHardwarePins(ssPin, sckPin, misoPin, mosiPin, resetPin, interruptPin);
         LOG_DEBUG("Successfully set up hardware pins");
@@ -1240,6 +1265,21 @@ namespace Ade7953
         LOG_DEBUG("Saving final energy data during cleanup");
         _saveEnergyComplete();
 
+        // Free waveform capture buffers
+        if (_voltageWaveformBuffer) {
+            free(_voltageWaveformBuffer);
+            _voltageWaveformBuffer = nullptr;
+        }
+        if (_currentWaveformBuffer) {
+            free(_currentWaveformBuffer);
+            _currentWaveformBuffer = nullptr;
+        }
+        if (_microsWaveformBuffer) {
+            free(_microsWaveformBuffer);
+            _microsWaveformBuffer = nullptr;
+        }
+        LOG_DEBUG("Cleaned up waveform capture buffers");
+
         LOG_DEBUG("Cleaned up tasks and energy saved");
     }
 
@@ -1298,12 +1338,15 @@ namespace Ade7953
         int32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
-        if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
+        // Check in order of priority, but ONLY check interrupts that are actually enabled
+        
+        // CYCEND is always enabled - check it first as it's the primary interrupt
+        if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
+            return Ade7953InterruptType::CYCEND;
+        } else if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
             return Ade7953InterruptType::RESET;
         } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
             return Ade7953InterruptType::CRC_CHANGE;
-        } else if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
-            return Ade7953InterruptType::CYCEND;
         } else {
             // Just log the unhandled status
             LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
@@ -1347,22 +1390,82 @@ namespace Ade7953
             // Next linecyc we skip since we changed channel
             _hasToSkipReading = true;
 
-            // Only for CYCEND interrupts, switch to next channel and set multiplexer
-            // This is because thanks to the linecyc approach, the data in the ADE7953 is "frozen"
-            // until the next linecyc interrupt is received, which is plenty of time to read the data
-            uint8_t previousChannel = _currentChannel; // Save the current channel before switching (but switch ASAP to ensure the ADE7953 reads the correct data)
+            // Since the data is frozen anyway, we can first retrieve the waveform, then the channel reading
+            if (_captureState == CaptureState::ARMED && _currentChannel == _captureRequestedChannel) {
+                LOG_DEBUG("Matched requested channel %u. Starting waveform capture via polling", _currentChannel);
+                
+                _captureChannel = _currentChannel;
+                _captureSampleCount = 0;
+                _captureStartUnixMillis = CustomTime::getUnixTimeMilliseconds();
+                _captureStartMicros = micros64();
+                _captureState = CaptureState::CAPTURING;
+                
+                // Immediately start polling for waveform samples
+                _pollWaveformSamples();
+            }
+            
+            // Process current channel (if active)
+            if (_currentChannel != INVALID_CHANNEL) _processChannelReading(_currentChannel, linecycUnix);
+
+            // Thanks to the linecyc approach, the data in the ADE7953 is "frozen"
+            // until the next linecyc interrupt is received, which allows us to switch to the
+            // next channel after we've completely read what we need to read (and in any case, the
+            // next reading will be purged)
             _currentChannel = _findNextActiveChannel(_currentChannel);
 
             // Weird way to ensure we don't go below 0 and we set the multiplexer to the channel minus 
             // 1 (since channel 0 does not pass through the multiplexer)
             Multiplexer::setChannel((uint8_t)(max(static_cast<int>(_currentChannel) - 1, 0)));
+        }
+        
+        // Check for channel 0 waveform capture separately (channel 0 doesn't go through multiplexer rotation)
+        // Channel 0 is always active and processed on every CYCEND, so we check for armed state here
+        if (_captureState == CaptureState::ARMED && _captureRequestedChannel == 0) {
+            LOG_DEBUG("Starting waveform capture for channel 0 via polling");
             
-            // Process current channel (if active)
-            if (previousChannel != INVALID_CHANNEL) _processChannelReading(previousChannel, linecycUnix);
+            _captureChannel = 0;
+            _captureSampleCount = 0;
+            _captureStartUnixMillis = CustomTime::getUnixTimeMilliseconds();
+            _captureStartMicros = micros64();
+            _captureState = CaptureState::CAPTURING;
+            
+            // Immediately start polling for waveform samples
+            _pollWaveformSamples();
         }
         
         // Always process channel 0 as it is on a separate ADE7953 channel
         _processChannelReading(0, linecycUnix);
+    }
+
+    void _pollWaveformSamples() {
+        // This function performs tight polling of instantaneous waveform registers
+        // Called from CYCEND interrupt context - we are sure we are in a "clean" state (no multiplexer switching)
+        // Poll as fast as possible with no artificial rate limiting - let SPI run at maximum speed
+        
+        Ade7953Channel ade7953Channel = (_captureChannel == 0) ? Ade7953Channel::A : Ade7953Channel::B;
+        
+        uint32_t loops = 0;
+        while (_captureSampleCount < WAVEFORM_BUFFER_SIZE && loops < MAX_LOOP_ITERATIONS) {
+            uint64_t currentMicros = micros64();
+            loops++;
+            
+            // Stop if we've captured for max duration
+            if (currentMicros - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS) break;
+            
+            // Read instantaneous values directly from registers (no rate limiting)
+            _voltageWaveformBuffer[_captureSampleCount] = _readVoltageInstantaneous();
+            _currentWaveformBuffer[_captureSampleCount] = _readCurrentInstantaneous(ade7953Channel);
+            _microsWaveformBuffer[_captureSampleCount] = currentMicros - _captureStartMicros;
+            
+            _captureSampleCount++;
+        }
+        
+        uint64_t totalDurationMs = (micros64() - _captureStartMicros) / 1000;
+        float effectiveSampleRate = _captureSampleCount > 0 ? (_captureSampleCount * 1000.0f) / totalDurationMs : 0;
+        
+        _captureState = CaptureState::COMPLETE;
+        LOG_INFO("Waveform capture complete for channel %u: %u samples in %llu ms (%.0f Hz)", 
+            _captureChannel, _captureSampleCount, totalDurationMs, effectiveSampleRate);
     }
 
     void _handleCrcChangeInterrupt() {
@@ -1484,6 +1587,9 @@ namespace Ade7953
                 #else
                 LOG_WARNING("No ADE7953 interrupt received within time expected, this indicates some problems.");
                 #endif
+
+                // Clear any interrupt flag to ensure we don't remain stuck
+                readRegister(RSTIRQSTATA_32, BIT_32, false);
             }
             
             // Check for stop notification (non-blocking) - this gives immediate shutdown response
@@ -2772,28 +2878,13 @@ namespace Ade7953
     // ADE7953 register reading functions
     // ==================================
 
-    int32_t _readApparentPowerInstantaneous(Ade7953Channel ade7953Channel) {
-        if (ade7953Channel == Ade7953Channel::A) return readRegister(AVA_32, BIT_32, true);
-        else return readRegister(BVA_32, BIT_32, true);
-    }
-
-    int32_t _readActivePowerInstantaneous(Ade7953Channel ade7953Channel) {
-        if (ade7953Channel == Ade7953Channel::A) return readRegister(AWATT_32, BIT_32, true);
-        else return readRegister(BWATT_32, BIT_32, true);
-    }
-
-    int32_t _readReactivePowerInstantaneous(Ade7953Channel ade7953Channel) {
-        if (ade7953Channel == Ade7953Channel::A) return readRegister(AVAR_32, BIT_32, true);
-        else return readRegister(BVAR_32, BIT_32, true);
-    }
-
     int32_t _readCurrentInstantaneous(Ade7953Channel ade7953Channel) {
-        if (ade7953Channel == Ade7953Channel::A) return readRegister(IA_32, BIT_32, true);
-        else return readRegister(IB_32, BIT_32, true);
+        if (ade7953Channel == Ade7953Channel::A) return readRegister(IA_32, BIT_32, true, false); // Since these instantaneous values need to be quick, we don't verify the reading
+        else return readRegister(IB_32, BIT_32, true, false); // Since these instantaneous values need to be quick, we don't verify the reading
     }
 
     int32_t _readVoltageInstantaneous() {
-        return readRegister(V_32, BIT_32, true);
+        return readRegister(V_32, BIT_32, true, false); // Since these instantaneous values need to be quick, we don't verify the reading
     }
 
     int32_t _readCurrentRms(Ade7953Channel ade7953Channel) {
@@ -2823,11 +2914,6 @@ namespace Ade7953
     int32_t _readPowerFactor(Ade7953Channel ade7953Channel) {
         if (ade7953Channel == Ade7953Channel::A) return readRegister(PFA_16, BIT_16, true);
         else return readRegister(PFB_16, BIT_16, true);
-    }
-
-    int32_t _readAngle(Ade7953Channel ade7953Channel) {
-        if (ade7953Channel == Ade7953Channel::A) return readRegister(ANGLE_A_16, BIT_16, true);
-        else return readRegister(ANGLE_B_16, BIT_16, true);
     }
 
     int32_t _readPeriod() {
@@ -3117,5 +3203,99 @@ namespace Ade7953
         } else {
             return TaskInfo(); // Return empty/default TaskInfo if task is not running
         }
+    }
+
+    // Waveform capture API
+    // ====================
+
+    bool startWaveformCapture(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) {
+            LOG_WARNING("Invalid channel index for waveform capture: %u", channelIndex);
+            return false;
+        }
+
+        // Check if buffers were allocated successfully at startup
+        if (_captureState == CaptureState::ERROR) {
+            LOG_ERROR("Cannot start capture, buffer allocation failed at startup");
+            return false;
+        }
+
+        // Check if another capture is already in progress or armed
+        if (_captureState != CaptureState::IDLE && _captureState != CaptureState::COMPLETE) {
+            LOG_WARNING("Cannot start capture, another capture is already in progress (state: %u)", static_cast<uint8_t>(_captureState));
+            return false;
+        }
+
+        _captureRequestedChannel = channelIndex;
+        _captureState = CaptureState::ARMED;
+        LOG_INFO("Waveform capture armed for channel %u", channelIndex);
+        return true;
+    }
+
+    uint8_t getWaveformCaptureChannel() {
+        return _captureChannel;
+    }
+
+    CaptureState getWaveformCaptureStatus() {
+        return _captureState;
+    }
+
+    uint16_t getWaveformCaptureData(int32_t* vBuffer, int32_t* iBuffer, uint64_t* microsBuffer, uint16_t bufferSize) {
+        if (_captureState != CaptureState::COMPLETE) {
+            return 0; // No data ready
+        }
+
+        if (!vBuffer || !iBuffer || !microsBuffer) {
+            LOG_ERROR("Invalid buffer pointers provided to getWaveformCaptureData");
+            return 0;
+        }
+
+        uint16_t samplesToCopy = (bufferSize < _captureSampleCount) ? bufferSize : _captureSampleCount;
+        memcpy(vBuffer, _voltageWaveformBuffer, samplesToCopy * sizeof(int32_t));
+        memcpy(iBuffer, _currentWaveformBuffer, samplesToCopy * sizeof(int32_t));
+        memcpy(microsBuffer, _microsWaveformBuffer, samplesToCopy * sizeof(uint64_t));
+
+        // Reset state to allow for a new capture
+        _captureState = CaptureState::IDLE;
+        _captureRequestedChannel = INVALID_CHANNEL;
+        _captureChannel = INVALID_CHANNEL;
+
+        LOG_DEBUG("Retrieved %u waveform samples", samplesToCopy);
+        return samplesToCopy;
+    }
+
+    bool getWaveformCaptureAsJson(JsonDocument& jsonDocument) {
+        if (_captureState != CaptureState::COMPLETE) {
+            LOG_DEBUG("No waveform data ready for JSON serialization (state: %u)", static_cast<uint8_t>(_captureState));
+            return false;
+        }
+
+        // Add metadata to the root object
+        jsonDocument["channelIndex"] = _captureChannel;
+        jsonDocument["sampleCount"] = _captureSampleCount;
+        jsonDocument["captureStartUnixMillis"] = _captureStartUnixMillis;
+        jsonDocument["captureStartMicros"] = _captureStartMicros;
+
+        // Create JSON arrays for voltage, current, and microseconds (only scaled values)
+        JsonArray voltageArray = jsonDocument["voltage"].to<JsonArray>();
+        JsonArray currentArray = jsonDocument["current"].to<JsonArray>();
+        JsonArray microsArray = jsonDocument["microsDelta"].to<JsonArray>();
+        
+        // Populate the arrays with scaled values only (leaner JSON)
+        for (uint16_t i = 0; i < _captureSampleCount; i++) {
+            voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * VOLT_PER_LSB_INSTANTANEOUS, VOLTAGE_DECIMALS));
+            // HACK: computing the actual value needed for the real current instantaneous values is long. Times 2 is close enough
+            currentArray.add(roundToDecimals(float(_currentWaveformBuffer[i]) * _channelData[_captureChannel].ctSpecification.aLsb * 2, CURRENT_DECIMALS));
+            microsArray.add(_microsWaveformBuffer[i]);
+        }
+        
+        LOG_INFO("Serialized %u waveform samples to JSON for channel %u and cleared data", _captureSampleCount, _captureChannel);
+        
+        // Data has been "consumed" by serializing it. Reset for the next capture.
+        _captureState = CaptureState::IDLE;
+        _captureRequestedChannel = INVALID_CHANNEL;
+        _captureChannel = INVALID_CHANNEL;
+
+        return true;
     }
 }

@@ -630,6 +630,7 @@ namespace CustomServer
         server.on("/info", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", info_html); });
         server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", log_html); });
         server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", update_html); });
+        server.on("/waveform", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", waveform_html); });
 
         // Swagger UI
         server.on("/swagger-ui", HTTP_GET, [](AsyncWebServerRequest *request) { request->send(HTTP_CODE_OK, "text/html", swagger_ui_html); });
@@ -1868,6 +1869,105 @@ namespace CustomServer
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;
             
+            _sendJsonResponse(request, doc);
+        });
+
+        // === WAVEFORM CAPTURE ENDPOINTS ===
+        
+        // Arm waveform capture for a channel
+        static AsyncCallbackJsonWebHandler *armWaveformCaptureHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/waveform/arm",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+            if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ADE7953_WAVEFORM_ARM)) return;
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc.set(json);
+
+            if (!doc["channelIndex"].is<uint8_t>()) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing or invalid channelIndex");
+                return;
+            }
+
+            uint8_t channelIndex = doc["channelIndex"].as<uint8_t>();
+
+            if (!isChannelValid(channelIndex)) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
+                return;
+            }
+
+            bool success = Ade7953::startWaveformCapture(channelIndex);
+            
+            if (!success) {
+                Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
+                if (state == Ade7953::CaptureState::ERROR) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Waveform capture buffer allocation failed");
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Waveform capture already in progress");
+                }
+                return;
+            }
+
+            LOG_DEBUG("Waveform capture armed for channel %u via API", channelIndex);
+            _sendSuccessResponse(request, "Waveform capture armed successfully");
+        });
+        server.addHandler(armWaveformCaptureHandler);
+
+        // Get waveform capture status
+        server.on("/api/v1/ade7953/waveform/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
+            
+            switch (state) {
+                case Ade7953::CaptureState::IDLE:
+                    doc["state"] = "idle";
+                    break;
+                case Ade7953::CaptureState::ARMED:
+                    doc["state"] = "armed";
+                    break;
+                case Ade7953::CaptureState::CAPTURING:
+                    doc["state"] = "capturing";
+                    break;
+                case Ade7953::CaptureState::COMPLETE:
+                    doc["state"] = "complete";
+                    break;
+                case Ade7953::CaptureState::ERROR:
+                    doc["state"] = "error";
+                    break;
+            }
+            doc["channel"] = Ade7953::getWaveformCaptureChannel();
+
+            LOG_DEBUG("Waveform capture status retrieved via API. Status for channel %u: %s",
+                      doc["channel"].as<uint8_t>(),
+                      doc["state"].as<const char *>());
+            _sendJsonResponse(request, doc);
+        });
+
+        // Get waveform capture data
+        server.on("/api/v1/ade7953/waveform/data", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            Ade7953::CaptureState state = Ade7953::getWaveformCaptureStatus();
+            
+            if (state != Ade7953::CaptureState::COMPLETE) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No waveform data available");
+                return;
+            }
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            bool success = Ade7953::getWaveformCaptureAsJson(doc);
+            
+            if (!success) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve waveform data");
+                return;
+            }
+
+            LOG_DEBUG("Waveform data retrieved via API");
             _sendJsonResponse(request, doc);
         });
 
