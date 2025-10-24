@@ -1,5 +1,13 @@
 # <img src="resources/logo.png" width="32" height="32" align="center"> EnergyMe-Home
 
+<!-- All the usual badges (license, stars, release, etc.) -->
+[![GitHub release](https://img.shields.io/github/release/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/releases)
+[![GitHub stars](https://img.shields.io/github/stars/jibrilsharafi/EnergyMe-Home.svg?style=social&label=Stars)](https://github.com/jibrilsharafi/EnergyMe-Home/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/issues)
+[![GitHub license](https://img.shields.io/github/license/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/blob/main/LICENSE)
+
+[<img src="resources/certification-mark-IT000025-wide.svg" alt="OSHWA Certified Open Source Hardware IT000025" height="40">](https://certification.oshwa.org/it000025.html)
+
 ![Homepage](resources/homepage.png)
 
 EnergyMe-Home is an open-source energy monitoring system for home use, capable of monitoring up to 17 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
