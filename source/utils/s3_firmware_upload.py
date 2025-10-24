@@ -263,6 +263,48 @@ class FirmwareUploader:
         }
         
         return ota_json
+
+    def clean_latest_folder(self, current_version):
+        """Remove other versioned firmware files from the 'latest' S3 prefix.
+
+        Keeps files that contain the current_version in their key and keeps
+        non-matching objects (like ota-job-document.json).
+        """
+        prefix = f"{self.get_s3_folder_path('latest')}/"
+        try:
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            page_it = paginator.paginate(Bucket=self.bucket_name, Prefix=prefix)
+        except Exception as e:
+            print(f"WARN: could not list objects for cleanup in {prefix}: {e}")
+            return
+
+        to_delete = []
+        for page in page_it:
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                # Keep ota-job-document.json and any object that contains the current version
+                if key.endswith('ota-job-document.json'):
+                    continue
+                if current_version in key:
+                    continue
+                # Only consider our energyme_home artifacts
+                if re.search(r'energyme_home_.*\.(bin|elf)$', key) or re.search(r'energyme_home_partitions_.*\.bin$', key):
+                    to_delete.append({'Key': key})
+
+        if not to_delete:
+            return
+
+        # delete in batches of 1000
+        for i in range(0, len(to_delete), 1000):
+            batch = to_delete[i:i+1000]
+            try:
+                del_resp = self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={'Objects': batch})
+                for d in del_resp.get('Deleted', []):
+                    print(f"Deleted old object: {d.get('Key')}")
+                for err in del_resp.get('Errors', []):
+                    print(f"Failed to delete {err.get('Key')}: {err.get('Message')}")
+            except Exception as e:
+                print(f"ERROR cleaning latest folder batch: {e}")
     
     def upload_firmware(self, dry_run=False):
         """Main upload function"""
@@ -382,7 +424,14 @@ class FirmwareUploader:
         
         if not upload_success:
             return False
-        
+
+        # Clean up old versioned files in the 'latest' prefix so older artifacts don't accumulate
+        if not dry_run:
+            try:
+                self.clean_latest_folder(version)
+            except Exception as e:
+                print(f"WARN: failed to clean latest folder: {e}")
+
         print(f"\n✅ Successfully uploaded firmware version {version} to S3!")
         print(f"Version-specific S3 URLs:")
         for name in build_files.keys():
