@@ -38,12 +38,17 @@ from botocore.exceptions import ClientError
 from tempfile import NamedTemporaryFile
 
 class FirmwareUploader:
-    def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32s3-dev", profile_name="default"):
+    def __init__(self, bucket_name="energyme-home-firmware-updates", environment="esp32s3-dev", profile_name="default", package_dir: str | None = None):
         self.bucket_name = bucket_name
         self.environment = environment
         self.profile_name = profile_name
         self.project_root = Path(__file__).parent.parent
-        self.build_dir = self.project_root / ".pio" / "build" / environment
+        # If a package_dir is provided prefer that as the build directory (useful for CI artifact folders)
+        self.package_dir = Path(package_dir) if package_dir else None
+        if self.package_dir and self.package_dir.exists() and self.package_dir.is_dir():
+            self.build_dir = self.package_dir
+        else:
+            self.build_dir = self.project_root / ".pio" / "build" / environment
         self.constants_file = self.project_root / "include" / "constants.h"
         
         # Initialize S3 client with AWS SSO profile
@@ -108,26 +113,70 @@ class FirmwareUploader:
         return version
     
     def check_build_files_exist(self):
-        """Check if all required build files exist"""
-        required_files = {
-            'firmware.bin': self.build_dir / "firmware.bin",
-            'firmware.elf': self.build_dir / "firmware.elf", 
-            'partitions.bin': self.build_dir / "partitions.bin"
+        """Find build files in the build directory.
+
+        Supports both the default PlatformIO build layout and CI-produced
+        package folders that contain versioned filenames like
+        'energyme_home_1.0.1.bin' and 'energyme_home_partitions_1.0.1.bin'.
+
+        Returns:
+            (ok: bool, files: dict[str, Path], detected_version: str|None)
+        """
+        if not self.build_dir.exists() or not self.build_dir.is_dir():
+            print(f"ERROR: Build directory not found: {self.build_dir}")
+            return False, {}, None
+
+        # Candidate patterns to look for
+        firmware_patterns = [r"energyme_home_(?P<ver>[0-9]+\.[0-9]+\.[0-9]+).*\.bin$", r"^firmware\.bin$"]
+        elf_patterns = [r"energyme_home_(?P<ver>[0-9]+\.[0-9]+\.[0-9]+).*\.elf$", r"^firmware\.elf$"]
+        partitions_patterns = [r"energyme_home_partitions_(?P<ver>[0-9]+\.[0-9]+\.[0-9]+).*\.bin$", r"^partitions\.bin$"]
+
+        found: dict[str, Path | None] = {
+            'firmware.bin': None,
+            'firmware.elf': None,
+            'partitions.bin': None
         }
-        
-        missing_files = []
-        for name, path in required_files.items():
-            if not path.exists():
-                missing_files.append(str(path))
-        
-        if missing_files:
-            print("ERROR: Missing build files:")
-            for file in missing_files:
+
+        detected_version = None
+
+        # Iterate files in build_dir and match patterns
+        for p in self.build_dir.iterdir():
+            name = p.name
+            # firmware bin
+            for pat in firmware_patterns:
+                m = re.search(pat, name)
+                if m:
+                    found['firmware.bin'] = p
+                    if 'ver' in m.groupdict() and m.group('ver'):
+                        detected_version = m.group('ver')
+                    break
+            # elf
+            for pat in elf_patterns:
+                m = re.search(pat, name)
+                if m:
+                    found['firmware.elf'] = p
+                    if not detected_version and 'ver' in m.groupdict() and m.group('ver'):
+                        detected_version = m.group('ver')
+                    break
+            # partitions
+            for pat in partitions_patterns:
+                m = re.search(pat, name)
+                if m:
+                    found['partitions.bin'] = p
+                    if not detected_version and 'ver' in m.groupdict() and m.group('ver'):
+                        detected_version = m.group('ver')
+                    break
+
+        missing = [str(self.build_dir / k) for k, v in found.items() if v is None]
+        if missing:
+            print("ERROR: Missing build files in build directory:")
+            for file in missing:
                 print(f"  - {file}")
-            print(f"\nPlease run 'platformio run --environment {self.environment}' first")
-            return False, {}
-        
-        return True, required_files
+            # Helpful hint when user likely expected PlatformIO build dir
+            print(f"\nPlease run 'platformio run --environment {self.environment}' or pass the CI package folder with --package-dir")
+            return False, {}, None
+
+        return True, found, detected_version
     
     def get_versioned_filename(self, base_filename, version):
         """Generate version-specific filename (e.g., energyme_home_0.12.40.bin)"""
@@ -226,23 +275,31 @@ class FirmwareUploader:
         # Verify S3 access
         if not dry_run and not self.verify_s3_access():
             return False
-        
-        # Parse version
-        try:
-            version = self.parse_version_from_constants()
-        except Exception as e:
-            print(f"ERROR parsing version: {e}")
-            return False
-        
-        # Check build files
-        files_exist, build_files = self.check_build_files_exist()
+
+        # Check build files first (may provide detected version when using CI package folder)
+        files_exist, build_files, detected_version = self.check_build_files_exist()
         if not files_exist:
             return False
+
+        # Prefer version detected from filenames in package_dir, otherwise fall back to constants.h
+        if detected_version:
+            version = detected_version
+            print(f"Using version detected from filenames: {version}")
+        else:
+            try:
+                version = self.parse_version_from_constants()
+            except Exception as e:
+                print(f"ERROR parsing version: {e}")
+                return False
         
         # Display file sizes
         print("Build files to upload:")
         total_size = 0
+        # Sanity check: ensure none are None (static analyzers may warn otherwise)
         for name, path in build_files.items():
+            if path is None:
+                print(f"ERROR: unexpected missing file: {name}")
+                return False
             size = path.stat().st_size
             total_size += size
             print(f"  - {name}: {size:,} bytes ({size/1024/1024:.2f} MB)")
@@ -379,6 +436,12 @@ Examples:
         action='store_true',
         help='Show what would be uploaded without actually uploading'
     )
+
+    parser.add_argument(
+        '--package-dir', '-d',
+        default=None,
+        help='Path to CI package folder containing firmware files (overrides default build dir)'
+    )
     
     args = parser.parse_args()
     
@@ -386,7 +449,8 @@ Examples:
     uploader = FirmwareUploader(
         bucket_name=args.bucket,
         environment=args.environment,
-        profile_name=args.profile
+        profile_name=args.profile,
+        package_dir=args.package_dir
     )
     
     success = uploader.upload_firmware(dry_run=args.dry_run)
