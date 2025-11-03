@@ -22,4 +22,3 @@ Simple PHP dashboard to aggregate and display power consumption from multiple En
 **Change threshold:** Edit the `3000` value in `index.php` (line with `data.totale > 3000`)
 
 **Monitor different channels:** Change `?index=0` to `?index=1` (or other channel) in the API URL
-
